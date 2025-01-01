@@ -2,6 +2,7 @@
 
 #include <queue>
 #include <stdexcept>
+#include <cstdint>
 #include <string>
 #include <string_view>
 
