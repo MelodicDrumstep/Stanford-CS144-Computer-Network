@@ -5,27 +5,26 @@
 using namespace std;
 
 ByteStream::ByteStream( uint64_t capacity ) 
-  : capacity_( capacity ), ring_buffers_{ RingBuffer(capacity + 1), RingBuffer(capacity + 1) }
+  : capacity_( capacity ), buffer_(capacity)
 {}
 
 void Writer::push( string data )
 {
-  auto & ring_buffer = ring_buffers_[current_ring_buffer_index_];
-  uint32_t data_length_can_be_pushed = std::min(static_cast<uint32_t>(data.size()), ring_buffer.availableSize());
-  bytes_pushed_ += data_length_can_be_pushed;
-  ring_buffer.push(data, data_length_can_be_pushed);
+  uint64_t len_pushed = std::min(data.size(), available_capacity());
+  bytes_pushed_ += len_pushed;
+  buffer_.push(data, len_pushed);
 }
 
 void Writer::close()
 {
   // Your code here.
-  flags_ &= EOF_FLAG;
+  flags_ |= EOF_FLAG;
 }
 
 void Writer::set_error()
 {
   // Your code here.
-  flags_ &= ERROR_FLAG;
+  flags_ |= ERROR_FLAG;
 }
 
 bool Writer::is_closed() const
@@ -37,7 +36,7 @@ bool Writer::is_closed() const
 uint64_t Writer::available_capacity() const
 {
   // Your code here.
-  return ring_buffers_[current_ring_buffer_index_].availableSize();
+  return buffer_.availableCapacity();
 }
 
 uint64_t Writer::bytes_pushed() const
@@ -48,17 +47,13 @@ uint64_t Writer::bytes_pushed() const
 
 string_view Reader::peek() const
 {
-  auto & old_ring_buffer = ring_buffers_[current_ring_buffer_index_];
-  auto & new_ring_buffer = ring_buffers_[1 - current_ring_buffer_index_];
-  old_ring_buffer.copyAndRestructure(new_ring_buffer);
-  current_ring_buffer_index_ = 1 - current_ring_buffer_index_;
-  return new_ring_buffer.toStringView();
+  return buffer_.toStringView();
 }
 
 bool Reader::is_finished() const
 {
   // Your code here.
-  return (flags_ & EOF_FLAG) && (ring_buffers_[current_ring_buffer_index_].isEmpty());
+  return (flags_ & EOF_FLAG) && (buffer_.isEmpty());
 }
 
 bool Reader::has_error() const
@@ -70,18 +65,19 @@ bool Reader::has_error() const
 void Reader::pop( uint64_t len )
 {
   // Your code here.
-  auto & ring_buffer = ring_buffers_[current_ring_buffer_index_];
-  ring_buffer.read_index_ = (ring_buffer.read_index_ + len) % ring_buffer.bufferSize(); 
+  uint64_t len_popped = std::min(len, bytes_buffered());
+  bytes_popped_ += len_popped;
+  buffer_.pop(len_popped);
 }
 
 uint64_t Reader::bytes_buffered() const
 {
   // Your code here.
-  return ring_buffers_[current_ring_buffer_index_].occupiedSize();
+  return buffer_.bytesBuffered();
 }
 
 uint64_t Reader::bytes_popped() const
 {
   // Your code here.
-  return bytes_poped_;
+  return bytes_popped_;
 }
