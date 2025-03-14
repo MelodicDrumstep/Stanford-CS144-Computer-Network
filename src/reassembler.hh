@@ -1,10 +1,10 @@
 #pragma once
 
-#include "byte_stream.hh"
-
 #include <string>
-#include <list>
-#include <functional>
+
+#include "byte_stream.hh"
+#include "bitmap.hpp"
+#include "task_guard.hpp"
 
 class Reassembler
 {
@@ -30,7 +30,7 @@ public:
    * The Reassembler should close the stream after writing the last byte.
    */
    Reassembler() 
-   : first_unassembled_index_(0), bytes_pending_(0), stored_strings_() {}
+   : first_unassembled_global_index_(0), bytes_pending_(0), sliding_window_(), bitmap_() {}
 
   void insert( uint64_t first_index, std::string data, bool is_last_substring, Writer& output );
 
@@ -38,28 +38,11 @@ public:
   uint64_t bytes_pending() const;
 
 private:
-  uint64_t first_unassembled_index_ = 0;
+  uint64_t first_unassembled_global_index_ = 0;
   uint64_t bytes_pending_ = 0;
   bool reach_end_ = false;
+  uint64_t buffer_size_ = 0;
 
-  struct StringWrapper {
-    uint64_t first_index = 0;
-    std::string data;
-  };
-  std::list<StringWrapper> stored_strings_;
-  // Use a list to store the strings
-  // Will be optimized to memory pool + instrusive linked list later
-};
-
-template <typename Func>
-class TaskExecutionScopeGuard {
-public:
-  TaskExecutionScopeGuard(Func && func) : task_(std::forward<Func>(func)) {}
-
-  ~TaskExecutionScopeGuard() {
-    task_();
-  }
-
-private:
-  Func task_;
+  std::vector<char> sliding_window_;
+  Bitmap<> bitmap_;
 };

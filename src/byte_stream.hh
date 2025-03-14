@@ -59,8 +59,8 @@ protected:
         return;
       }
       else if (distance_head_to_read_index + distance_write_index_to_tail < len_pushed) {
-        array_.resize(array_.size() * 2);
-      } 
+        array_.resize(array_.size() * 4);
+      }
 
       uint64_t bytes_buffered = bytesBuffered();
       if((bytes_buffered > 0) && (read_index_ >= bytes_buffered)) {

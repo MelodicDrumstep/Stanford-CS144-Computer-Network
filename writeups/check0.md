@@ -1,22 +1,14 @@
 Checkpoint 0 Writeup
 ====================
 
-My name: [your name here]
+For ByteStream, I tried two implementations:
 
-My SUNet ID: [your sunetid here]
+1. Using std::deque. It's really easy but performance is bad (due to "peek" function constraint).
 
-I collaborated with: [list sunetids here]
+2. Using flat std::vector and use memcpy whenever I can. The performance is better. (0.16 Gbit/s)
 
-I would like to credit/thank these classmates for their help: [list sunetids here]
+I think the "peek" interface makes it harder for better performance. It requires returning a std::string_view, 
+ which makes it really hard to avoid copy in ring buffer.
+ I would have design a ring buffer with some simple protocol and the corresponding interface in real life.
 
-This lab took me about [n] hours to do. I [did/did not] attend the lab session.
-
-My secret code from section 2.1 was: [code here]
-
-- Optional: I had unexpected difficulty with: [describe]
-
-- Optional: I think you could make this lab better by: [describe]
-
-- Optional: I was surprised by: [describe]
-
-- Optional: I'm not sure about: [describe]
+At last, fun project!

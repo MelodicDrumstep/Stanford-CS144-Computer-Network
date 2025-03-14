@@ -1,29 +1,15 @@
 Checkpoint 1 Writeup
 ====================
 
-My name: [your name here]
+For Reassembler, I tried two implementations:
 
-My SUNet ID: [your sunetid here]
+1. Use list to store the string segments. 
 
-I collaborated with: [list sunetids here]
+This is a naive idea and relative easy to implement. Actually I just use std::list for simplicity. (If I want better performance
+ in this version I would convert it to be memory pooling + instrusive linked list). See git commit node "ec5b57c381c3d406e12a63ac51e27097ed1afaaf" for this implementation.
 
-I would like to thank/reward these classmates for their help: [list sunetids here]
+Actually the performance is not bad (2.08 Gbit/s). However, a lot of memory allocation and deallocation overhead lies here due to
+ std::string and std::list. And I can use a flat array design to avoid that (and use a bitmap to accelerate searching).
 
-This lab took me about [n] hours to do. I [did/did not] attend the lab session.
+2. Use flat array and bitmap.
 
-Program Structure and Design of the Reassembler:
-[]
-
-Implementation Challenges:
-[]
-
-Remaining Bugs:
-[]
-
-- Optional: I had unexpected difficulty with: [describe]
-
-- Optional: I think you could make this lab better by: [describe]
-
-- Optional: I was surprised by: [describe]
-
-- Optional: I'm not sure about: [describe]
