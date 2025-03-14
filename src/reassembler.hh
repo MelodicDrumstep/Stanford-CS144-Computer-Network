@@ -6,10 +6,6 @@
 #include <list>
 #include <functional>
 
-// TODO: Delete this after testing
-#include <iostream>
-
-
 class Reassembler
 {
 public:
@@ -34,12 +30,7 @@ public:
    * The Reassembler should close the stream after writing the last byte.
    */
    Reassembler() 
-   : first_unassembled_index_(0), bytes_pending_(0), stored_strings_() 
-   { 
-    // TODO: Delete this after testing
-    std::cout << "[Reassembler::Reassembler]\n";
-    // DBEUGING
-   }
+   : first_unassembled_index_(0), bytes_pending_(0), stored_strings_() {}
 
   void insert( uint64_t first_index, std::string data, bool is_last_substring, Writer& output );
 
