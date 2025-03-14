@@ -1,0 +1,1 @@
+g++ -O3 -g -std=c++17 -o bitmap_test bitmap_test.cpp

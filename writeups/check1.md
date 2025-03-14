@@ -13,3 +13,10 @@ Actually the performance is not bad (2.08 Gbit/s). However, a lot of memory allo
 
 2. Use flat array and bitmap.
 
+I tried to implement the naive version of flat array & bitmap based reassembler. No batch processing is used, and the throughput for speed test is 1.92 Gbit/s.
+
+For optimizations:
+
++ Add batch processing to bitmap
+
+I firstly write some fused batch processing function for bitmap. The performance boost is significant, and the throughput for speed test is 4.86 ~ 6.32 Gbit/s.

@@ -5,3 +5,4 @@
 /.cache
 
 **/*.log
+test/user_test/*_test

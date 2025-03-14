@@ -4,6 +4,7 @@
 #include <vector>
 #include <cassert>
 #include <bitset>
+#include <cstdint>
 
 /** 
 * @brief A customized bitmap implementation
@@ -33,11 +34,13 @@ public:
 
     Bitmap(uint64_t element_capacity) 
         : element_capacity_(element_capacity), 
+          array_size_((element_capacity + Block_Size - 1) / Block_Size),
           data_((element_capacity + Block_Size - 1) / Block_Size) {}
 
     void resize(uint64_t element_capacity) {
         element_capacity_ = element_capacity;
-        data_.resize((element_capacity + Block_Size - 1) / Block_Size);
+        array_size_ = (element_capacity + Block_Size - 1) / Block_Size;
+        data_.resize(array_size_);
     }
 
     /**
@@ -68,6 +71,7 @@ public:
         data_[array_index] &= ~(BlockType(1) << bit_index); // Set the specific bit to 0
     }
 
+
     /**
      * Retrieves the value of the bit at the specified element index.
      *
@@ -85,209 +89,46 @@ public:
     }
 
     /**
-     * @brief Returns the index of the kth least significant bit that is set to 1 in the bitmap from the specified element index.
-     * It will traverse the bits by blocks so it's faster than the naive implementation, which will traverse bit by bit.
-     * 
-     * @param element_index The index of the element to start the search from.
-     * @param k The kth least significant bit to find.
-     *
-     * @return The index of the kth least significant bit that is set to 1, or -1 if not found.
+     * @brief
+     Count the 1's in [start_element_index, end_element_index]
+     Set the elements to 0
      */
-    uint64_t getKthLeqFromIndex(uint64_t element_index, int k) const
-    {
-        uint64_t array_index = element_index / Block_Size;
-        uint64_t bit_index = element_index % Block_Size;
+    uint64_t getPopCountAndUnsetBatch(uint64_t start_element_index, uint64_t end_element_index) {
+        uint64_t start_array_index = start_element_index / Block_Size;
+        uint64_t start_bit_index = start_element_index % Block_Size;
+        uint64_t end_array_index = end_element_index / Block_Size;
+        uint64_t end_bit_index = end_element_index % Block_Size;
+        uint64_t pop_count = 0;
 
-        // Traverse bits to the left within the current array element
-        BlockType mask = ((BlockType(1) << (bit_index)) << 1) - 1; // Mask for bits to the left of bit_index
-        BlockType current_value = data_.at(array_index) & mask;
-        uint64_t ones_in_current_value = count_ones(current_value);
+        BlockType start_mask = BlockType(-1) << (start_bit_index);
+        BlockType end_mask = BlockType(-1) >> (Block_Size - 1 - end_bit_index);
 
-        // If there are not enough ones in the current block, skip the entire block
-        while(ones_in_current_value < k && array_index > 0)
-        {
-            k -= ones_in_current_value;
-            --array_index;
-            ones_in_current_value = count_ones(data_.at(array_index));
-            bit_index = Block_Size - 1;
+        // count start bits in the first block using mask and set the bits to 0
+        if(start_array_index == end_array_index) {
+            // If start and end are in the same block, create a mask for the range
+            BlockType mask = start_mask & end_mask;
+            pop_count += countOnes(data_[start_array_index] & mask);
+            data_[start_array_index] &= ~mask;
+            return pop_count;
         }
 
-        // If there are enough ones in the current block, search bit by bit
-        if(k > 0)
-        {
-            for(uint64_t i = bit_index; i >= 0; --i)
-            {
-                if((data_.at(array_index)) & (1 << i))
-                {
-                    --k;
-                    if(k == 0)
-                    {
-                        return array_index * Block_Size + i;
-                    }
-                }
-            }
+        pop_count += countOnes(data_[start_array_index] & start_mask);
+        data_[start_array_index] &= ~(start_mask);
+        // count blocks in batch using pop_count instructions and set the blocks to 0
+        for(uint64_t i = start_array_index + 1; i != end_array_index; i = (i + 1) % array_size_) {
+            pop_count += countOnes(data_[i]);
+            data_[i] = 0;
         }
-
-        return -1; // Return -1 if not found
-    }
-
-    /**
-     * @brief Returns the index of the kth most significant bit that is set to 1 in the bitmap from the specified element index.
-     * It will traverse the bits by blocks so it's faster than the naive implementation, which will traverse bit by bit.
-     *
-     * @param element_index The index of the element to start the search from.
-     * @param k The kth most significant bit to find.
-     *
-     * @return The index of the kth most significant bit that is set to 1, or -1 if not found.
-     */
-    uint64_t getKthGeqFromIndex(int element_index, int k) const
-    {
-        uint64_t array_index = element_index / Block_Size;
-        uint64_t bit_index = element_index % Block_Size;
-
-        // Traverse bits to the right within the current array element
-        BlockType mask = ~((BlockType(1) << (bit_index)) - 1); // Mask for bits to the right of bit_index
-        BlockType current_value = data_.at(array_index) & mask;
-        uint64_t ones_in_current_value = count_ones(current_value);
-
-        // If there are not enough ones in the current block, skip the entire block
-        while(ones_in_current_value < k && array_index < data_.size() - 1)
-        {
-            k -= ones_in_current_value;
-            ++array_index;
-            current_value = data_.at(array_index);
-            ones_in_current_value = count_ones(current_value);
-            bit_index = 0;  // Reset to the beginning of the next block
-        }
-
-        // If there are enough ones in the current block, search bit by bit
-        if(k > 0)
-        {
-            for(uint64_t i = bit_index; i < Block_Size; ++i)
-            {
-                if((data_.at(array_index) & (BlockType(1) << i)))  
-                {
-                    --k;
-                    if(k == 0)
-                    {
-                        return array_index * Block_Size + i;
-                    }
-                }
-            }
-        }
-
-        return -1; // Return -1 if not found
-    }
-
-    
-    /**
-     * @brief Finds the index of the first valid bit (set to 1) which is less than the specified element index in the bitmap.
-     *
-     * @param element_index The index of the element to start the search from.
-     *
-     * @return The index of the first valid bit less than the element index, or -1 if not found.
-     */
-    uint64_t getFirstValidLessFromIndex(uint64_t element_index) const
-    {
-        uint64_t array_index = element_index / Block_Size;
-        uint64_t bit_index = element_index % Block_Size;
-
-        // Traverse bits to the left within the current block
-        BlockType mask = ((BlockType(1) << bit_index) - 1); // Mask for bits to the left of bit_index
-        BlockType current_value = data_[array_index] & mask;
-        uint64_t ones_in_current_value = count_ones(current_value);
-
-        // Check if there are valid bits in the current block
-        if (ones_in_current_value > 0)
-        {
-            // Find the first valid bit within the current block
-            for (uint64_t i = bit_index - 1; i >= 0; --i)
-            {
-                if (data_[array_index] & (BlockType(1) << i))
-                {
-                    return array_index * Block_Size + i;
-                }
-            }
-        }
-
-        // Traverse previous blocks
-        for (uint64_t i = array_index - 1; i >= 0; --i)
-        {
-            if (data_[i] != 0)
-            {
-                uint64_t ones_in_block = count_ones(data_[i]);
-                if (ones_in_block > 0)
-                {
-                    for (uint64_t j = Block_Size - 1; j >= 0; --j)
-                    {
-                        if (data_[i] & (BlockType(1) << j))
-                        {
-                            return i * Block_Size + j;
-                        }
-                    }
-                }
-            }
-        }
-
-        return -1; // Return -1 if not found
-    }
-
-
-    /**
-     * Finds the index of the first valid bit (set to 1) which is greater than the specified element index in the bitmap.
-     *
-     * @param element_index The index of the element to start the search from.
-     *
-     * @return The index of the first valid bit greater than the element index, or -1 if not found.
-     */
-    uint64_t getFirstValidGreaterFromIndex(uint64_t element_index) const
-    {
-        uint64_t array_index = element_index / Block_Size;
-        uint64_t bit_index = element_index % Block_Size;
-
-        // Traverse bits to the right within the current block
-        BlockType mask = ~((BlockType(1) << bit_index) - 1); // Mask for bits to the right of bit_index
-        BlockType current_value = data_[array_index] & mask;
-        uint64_t ones_in_current_value = count_ones(current_value);
-
-        // Check if there are valid bits in the current block
-        if (ones_in_current_value > 0)
-        {
-            // Find the first valid bit within the current block
-            for (uint64_t i = bit_index + 1; i < Block_Size; ++i)
-            {
-                if (data_[array_index] & (BlockType(1) << i))
-                {
-                    return array_index * Block_Size + i;
-                }
-            }
-        }
-
-        // Traverse subsequent blocks
-        for (uint64_t i = array_index + 1; i < data_.size(); ++i)
-        {
-            if (data_[i] != 0)
-            {
-                uint64_t ones_in_block = count_ones(data_[i]);
-                if (ones_in_block > 0)
-                {
-                    for (uint64_t j = 0; j < Block_Size; ++j)
-                    {
-                        if (data_[i] & (BlockType(1) << j))
-                        {
-                            return i * Block_Size + j;
-                        }
-                    }
-                }
-            }
-        }
-
-        return -1; // Return -1 if not found
+        // count end bits in the last block using mask and set the bits to 0
+        pop_count += countOnes(data_[end_array_index] & end_mask);
+        data_[end_array_index] &= ~(end_mask);
+        return pop_count;
     }
 
 private:
     std::vector<BlockType> data_; // Store the bitmap as a vector of BlockTypes
     uint64_t element_capacity_ = 0;
+    uint64_t array_size_ = 0;
 
     /**
      * @brief Counts the number of set bits in the given integer type.
@@ -299,17 +140,17 @@ private:
      * @return The number of set bits in the given integer.
      *
      */
-    static uint64_t count_ones(BlockType num)
+    static uint64_t countOnes(BlockType num)
     {
         static_assert(std::is_same_v<BlockType, decltype(num)>, "Implicit type conversion detected");
 
         if constexpr (std::is_same_v<BlockType, char> || std::is_same_v<BlockType, unsigned char>)
         {
-            return __builtin_popcount(static_cast<uint64_t>(num));
+            return __builtin_popcount(static_cast<int>(num));
         }
         else if constexpr (std::is_same_v<BlockType, short> || std::is_same_v<BlockType, unsigned short>)
         {
-            return __builtin_popcount(static_cast<uint64_t>(num));
+            return __builtin_popcount(static_cast<int>(num));
         }
         else if constexpr (std::is_same_v<BlockType, int> || std::is_same_v<BlockType, unsigned int>)
         {
@@ -358,68 +199,6 @@ public:
     {
         assert(element_index < data_.size());
         return data_[element_index]; // Return the bit value (0 or 1)
-    }
-
-    // Find the kth unset bit to the left starting from `element_index`
-    uint64_t getKthLeqFromIndex(uint64_t element_index, int32_t k) const
-    {
-        // Traverse bits to the left
-        for(int32_t i = element_index; i >= 0; --i)
-        {
-            if(data_[i] == 1)
-            {
-                --k;
-                if(k == 0)
-                {
-                    return i;
-                }
-            }
-        }
-        return -1; // Return -1 if not found
-    }
-
-    // Find the kth unset bit to the right starting from `element_index`
-    uint64_t getKthGeqFromIndex(uint64_t element_index, int k) const
-    {
-        // Traverse bits to the right
-        for(uint64_t i = element_index; i < data_.size(); ++i)
-        {
-            if(data_[i] == 1)
-            {
-                --k;
-                if(k == 0)
-                {
-                    return i;
-                }
-            }
-        }
-        return -1; // Return -1 if not found
-    }
-
-    // Find the first valid bit (1) less than element_index
-    uint64_t getFirstValidLessFromIndex(uint64_t element_index) const
-    {
-        for (int32_t i = element_index - 1; i >= 0; --i)
-        {
-            if (data_[i] == 1)
-            {
-                return i;
-            }
-        }
-        return -1; // Return -1 if not found
-    }
-
-    // Find the first valid bit (1) greater than element_index
-    uint64_t getFirstValidGreaterFromIndex(uint64_t element_index) const
-    {
-        for (uint64_t i = element_index + 1; i < data_.size(); ++i)
-        {
-            if (data_[i] == 1)
-            {
-                return i;
-            }
-        }
-        return -1; // Return -1 if not found
     }
 
 private:

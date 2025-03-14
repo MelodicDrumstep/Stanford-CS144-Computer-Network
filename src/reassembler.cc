@@ -30,16 +30,26 @@ void Reassembler::insert( uint64_t first_index, string data, bool is_last_substr
   }
   if(first_index <= first_unassembled_global_index_) {
     // push to the stream
-    uint64_t i = first_unassembled_global_index_;
-    for(; i != data_tail_index; i++) {
-      uint64_t window_index = i % buffer_size_;
-      if(bitmap_.get(window_index)) {
-        bytes_pending_--;
-        bitmap_.unset(window_index);
-      }
-    }
+
+    // Older version:
+    // uint64_t i = first_unassembled_global_index_;
+
+    // for(; i != data_tail_index; i++) {
+    //   uint64_t window_index = i % buffer_size_;
+    //   if(bitmap_.get(window_index)) {
+    //     bytes_pending_--;
+    //     bitmap_.unset(window_index);
+    //   }
+    // }
+
+    // Newer version(using batch processing):
+    bytes_pending_ -= bitmap_.getPopCountAndUnsetBatch(first_unassembled_global_index_ % buffer_size_, (data_tail_index + buffer_size_ - 1) % buffer_size_);
+
     uint64_t data_start_str_index = first_unassembled_global_index_ - first_index;
     first_unassembled_global_index_ = data_tail_index;
+
+    // Below can be optimized to batch processing, if the data feature supports that optimization
+    uint64_t i = data_tail_index;
     uint64_t window_index = i % buffer_size_;
     while(bitmap_.get(window_index)) {
       bytes_pending_--;
