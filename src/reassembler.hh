@@ -37,6 +37,10 @@ public:
   // How many bytes are stored in the Reassembler itself?
   uint64_t bytes_pending() const;
 
+  uint64_t getFirstUnassembledIndex() const {
+    return first_unassembled_global_index_;
+  }
+
 private:
   uint64_t first_unassembled_global_index_ = 0;
   uint64_t bytes_pending_ = 0;
