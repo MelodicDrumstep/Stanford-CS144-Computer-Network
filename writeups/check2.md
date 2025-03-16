@@ -1,31 +1,10 @@
 Checkpoint 2 Writeup
 ====================
 
-My name: [your name here]
+The wrapping integers part is the most interesting in this lab:
 
-My SUNet ID: [your sunetid here]
+I firstly write down some equations and try to do some modular magic. And soon I become confused. Later on I took reference to some ideas online and fix it.
 
-I collaborated with: [list sunetids here]
+The basic idea is to project the checkpoint into the uint32_t area, compute the difference, and project back. And one special case must be taken into consideration.
 
-I would like to thank/reward these classmates for their help: [list sunetids here]
-
-This lab took me about [n] hours to do. I [did/did not] attend the lab session.
-
-Program Structure and Design of the TCPReceiver and wrap/unwrap routines:
-[]
-
-Implementation Challenges:
-[]
-
-Remaining Bugs:
-[]
-
-- Optional: I had unexpected difficulty with: [describe]
-
-- Optional: I think you could make this lab better by: [describe]
-
-- Optional: I was surprised by: [describe]
-
-- Optional: I'm not sure about: [describe]
-
-- Optional: I made an extra test I think will be helpful in catching bugs: [describe where to find]
+The TCP Receiver part is super easy.

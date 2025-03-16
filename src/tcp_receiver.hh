@@ -23,5 +23,6 @@ public:
 private:
   std::optional<Wrap32> initial_seq_num_ = std::nullopt;
   uint64_t first_unassembled_index_ = 0;
+  bool meet_FIN_ = false;
   bool is_finished_ = false;
 };
