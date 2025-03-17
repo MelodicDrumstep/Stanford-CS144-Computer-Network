@@ -74,14 +74,19 @@ optional<TCPSenderMessage> TCPSender::maybe_send()
   }
 
   // DEBUGING
-  std::cout << "unsent_msgs_ is not empty, printing the unsent_msgs_ : \n";
+  std::cout << "printing the unsent_msgs_ : \n";
   for(auto & msg : unsent_msgs_) {
+    std::cout << msg.toString();
+  }
+  std::cout << "printing the unacked_msgs_ : \n";
+  for(auto & msg : unacked_msgs_) {
     std::cout << msg.toString();
   }
   // DEBUGING
 
   // There's message in the unsent buffer, send the first one
-  TCPSenderMessage msg = unsent_msgs_.front();
+  TCPSenderMessageWrapper msg_wrapper = unsent_msgs_.front();
+  auto & msg = msg_wrapper.msg;
   // Carry SYN if SYN unsent
   if(has_not_sent_SYN_) {
     msg.SYN = true;
@@ -91,7 +96,11 @@ optional<TCPSenderMessage> TCPSender::maybe_send()
   unsent_seqnos_ -= seq_length;
   unacked_seqnos_ += seq_length;
   unsent_msgs_.pop_front();
-  unacked_msgs_.push_back(msg);
+  if(msg_wrapper.is_retransmitted) {
+    unacked_msgs_.push_front(msg);
+  } else {
+    unacked_msgs_.push_back(msg);
+  }
   if(!timer_.isOn()) {
     timer_.start();
   }
@@ -131,14 +140,12 @@ void TCPSender::push( Reader& outbound_stream )
       stream_is_finished_ = outbound_stream.is_finished();
       bool FIN_flag = (has_not_sent_FIN_) && (stream_is_finished_) && (window_size_ - unacked_seqnos_ - unsent_seqnos_ >= 1);
       
-
-
       unsent_msgs_.emplace_back(Wrap32::wrap(next_seqno_, isn_), false, 
         std::string(data_to_be_popped), FIN_flag);
       has_not_sent_FIN_ = (has_not_sent_FIN_) && (!FIN_flag);
       // If we have send a FIN inside the message, set the "has_not_sent_FIN" flag to be false.
       // Therefore we would not resend it when "unsent_msgs_" is empty
-      uint64_t seq_length = unsent_msgs_.back().sequence_length();
+      uint64_t seq_length = unsent_msgs_.back().msg.sequence_length();
       unsent_seqnos_ += seq_length;
       // has_not_sent_SYN_ = false;
       next_seqno_ += seq_length;
@@ -168,6 +175,14 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
     uint64_t ab_ackno = msg.ackno.value().unwrap(isn_, next_seqno_);
     std::cout << "absolute ackno is " << ab_ackno << "\n";
   }
+  std::cout << "printing the unsent_msgs_ : \n";
+  for(auto & msg_p : unsent_msgs_) {
+    std::cout << msg_p.toString();
+  }
+  std::cout << "printing the unacked_msgs_ : \n";
+  for(auto & msg_p : unacked_msgs_) {
+    std::cout << msg_p.toString();
+  }
   // DEBUGING
 
   window_size_ = msg.window_size;
@@ -194,7 +209,7 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
       }
 
       // DEBUGING
-      std::cout << "[TCPSender::receive] pop an unacked msg and add it to the unsent_msgs : " 
+      std::cout << "[TCPSender::receive] pop an unacked msg : " 
       << unacked_msg.toString() << "\n";
       // DEBUGING
 
@@ -227,18 +242,35 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
 void TCPSender::tick( const size_t ms_since_last_tick )
 {
   // Your code here.
+  // DEBUGING
+  std::cout << "printing the unsent_msgs_ : \n";
+  for(auto & msg : unsent_msgs_) {
+    std::cout << msg.toString();
+  }
+  std::cout << "printing the unacked_msgs_ : \n";
+  for(auto & msg : unacked_msgs_) {
+    std::cout << msg.toString();
+  }
+  // DEBUGING
+
   if(timer_.isOn()) {
     timer_.tick(ms_since_last_tick);
     if(timer_.hasExpired()) {
       // Retransmit
       TCPSenderMessage msg = unacked_msgs_.front();
+
+      // DEBUGING
+      std::cout << "[TCPSender::Tick] msg to be retransmitted is " << msg.toString() << "\n";
+      // DEBUGING
+
       uint64_t seq_length = msg.sequence_length();
       unacked_seqnos_ -= seq_length;
       unsent_seqnos_ += seq_length;
       unacked_msgs_.pop_front();
       // Insert into the unsent_msgs_. I think I only need to 
-      //push front, TODO: check it
-      unsent_msgs_.push_front(msg);
+      // push front, TODO: check it
+      unsent_msgs_.emplace_front(msg, true);
+      // DEBUGING
 
       if(window_size_ != 0) {
         consecutive_retransmission_num_++;

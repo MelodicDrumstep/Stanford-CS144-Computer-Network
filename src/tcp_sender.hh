@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cassert>
+#include <iostream>
 
 #include "byte_stream.hh"
 #include "tcp_receiver_message.hh"
@@ -64,7 +65,7 @@ private:
   bool has_not_sent_SYN_ = true;
   bool has_not_sent_FIN_ = true;
   bool stream_is_finished_ = false;
-  std::deque<TCPSenderMessage> unsent_msgs_ {};
+  std::deque<TCPSenderMessageWrapper> unsent_msgs_ {};
   std::deque<TCPSenderMessage> unacked_msgs_ {};
   uint64_t next_seqno_ = 0; // store the absolute seqno here. It will also serve as the checkpoint when unwrapping ack
   uint32_t unsent_seqnos_ = 0;
