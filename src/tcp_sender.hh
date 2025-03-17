@@ -1,35 +1,74 @@
 #pragma once
 
+#include <cassert>
+
 #include "byte_stream.hh"
 #include "tcp_receiver_message.hh"
 #include "tcp_sender_message.hh"
 
 class Timer {
   public:
-    Timer(uint64_t RTO_ms) : RTO_ms_(RTO_ms), timeout_ms_(RTO_ms) {}
+    Timer(uint64_t RTO_ms) : initial_RTO_ms_(RTO_ms), RTO_ms_(RTO_ms), timeout_ms_(RTO_ms) {}
   
     void tick( uint64_t ms_since_last_tick ) {
-      timeout_ms_ -= ms_since_last_tick;
-      // TODO:
+      timeout_ms_ = (timeout_ms_ <= ms_since_last_tick) ? 0 : timeout_ms_ - ms_since_last_tick;
     }
+
+    bool isOn() const {
+      return is_on_;
+    }
+
+    bool hasExpired() const {
+      assert(is_on_);
+      return timeout_ms_ == 0;
+    }
+
+    void doubleRTO() {
+      assert(is_on_);
+      RTO_ms_ *= 2;
+    }
+
+    void resetRTO() {
+      assert(is_on_);
+      RTO_ms_ = initial_RTO_ms_;
+    }
+
+    void start() {
+      is_on_ = true;
+      timeout_ms_ = RTO_ms_;
+    }
+
+    void stop() {
+      is_on_ = false;
+    }
+
   private:
     bool is_on_{false};
+    uint64_t initial_RTO_ms_;
     uint64_t RTO_ms_;
     uint64_t timeout_ms_;
 };
 
+/**
+ * @brief TCPSender class
+  It maintains the unsent msgs buffer and unacked msgs buffer.
+  unsent msgs are msgs read from the buffer and not yet sent. Once it has been sent by
+  "maybe_send", it will be moved to "unacked msgs buffer". And once the timer expired,
+  we move the first msgs in the unacked msgs buffer to the front of the unsent msgs buffer
+  to do retransmission.
+ */
 class TCPSender
 {
 private:
   Wrap32 isn_;
-  uint64_t initial_RTO_ms_;
   bool has_to_sent_SYN_ = true;
-  std::deque<TCPSenderMessage> unsent_msgs_;
-  std::deque<TCPSenderMessage> unacked_msgs_;
-  Wrap32 next_seqno_;
+  std::deque<TCPSenderMessage> unsent_msgs_ {};
+  std::deque<TCPSenderMessage> unacked_msgs_ {};
+  uint64_t next_seqno_ = 0; // store the absolute seqno here. It will also serve as the checkpoint when unwrapping ack
   uint32_t unsent_seqnos_ = 0;
+  uint32_t unacked_seqnos_ = 0;
   uint16_t window_size_ = 1;
-  uint64_t checkpoint_ = 0;
+  uint32_t consecutive_retransmission_num_ = 0;
   Timer timer_;
 
 public:

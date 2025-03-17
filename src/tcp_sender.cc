@@ -1,5 +1,7 @@
 #include <random>
 #include <deque>
+#include <cassert>
+#include <iostream>
 
 #include "tcp_sender.hh"
 #include "tcp_config.hh"
@@ -8,43 +10,93 @@ using namespace std;
 
 /* TCPSender constructor (uses a random ISN if none given) */
 TCPSender::TCPSender( uint64_t initial_RTO_ms, optional<Wrap32> fixed_isn )
-  : isn_( fixed_isn.value_or( Wrap32 { random_device()() } ) ), 
-    initial_RTO_ms_( initial_RTO_ms ),
-    next_seqno_(Wrap32::wrap(0, isn_)),
-    timer_(intial_RTO_ms)
+  : isn_( fixed_isn.value_or( Wrap32 { random_device()() } ) ),
+    timer_(initial_RTO_ms)
 {}
 
 uint64_t TCPSender::sequence_numbers_in_flight() const
 {
   // Your code here.
-  return {};
+  return unacked_seqnos_;
 }
 
 uint64_t TCPSender::consecutive_retransmissions() const
 {
   // Your code here.
-  return {};
+  return consecutive_retransmission_num_;
 }
 
 optional<TCPSenderMessage> TCPSender::maybe_send()
 {
   // Your code here.
+  // DEBUGING
+  std::cout << "[TCPSender::maybe_send]\n";
+  // DEBUGING
+
   if(unsent_msgs_.empty()) {
+    if(has_to_sent_SYN_) {
+      // DEBUGING
+      std::cout << "unsent_msgs_.empty() && has_to_sent_SYN_\n";
+      // DEBUGING
+
+      // The first msg would be the SYN message
+      // Here it does not carry the payload
+      has_to_sent_SYN_ = false;
+      TCPSenderMessage msg;
+      msg.SYN = true;
+      msg.seqno = Wrap32::wrap(0, isn_);
+      next_seqno_++;
+      unacked_seqnos_++;
+      unacked_msgs_.push_back(msg);
+      // This message must be tracked in the unacked msgs buffer too
+      if(!timer_.isOn()) {
+        timer_.start();
+      }
+      return msg;
+    }
+
+    // DEBUGING
+    std::cout << "unsent_msgs_.empty() && !has_to_sent_SYN_\n";
+    // DEBUGING
+
     return std::nullopt;
   }
+
+  // DEBUGING
+  std::cout << "unsent_msgs_ is not empty, printing the unsent_msgs_ : \n";
+  for(auto & msg : unsent_msgs_) {
+    std::cout << msg.toString();
+  }
+  // DEBUGING
+
+  // There's message in the unsent buffer, send the first one
   TCPSenderMessage msg = unsent_msgs_.front();
-  unsent_seqnos_ -= msg.sequence_length();
+  if(has_to_sent_SYN_) {
+    msg.SYN = true;
+    has_to_sent_SYN_ = false;
+  }
+  uint64_t seq_length = msg.sequence_length();
+  unsent_seqnos_ -= seq_length;
   unsent_msgs_.pop_front();
   unacked_msgs_.push_back(msg);
   // TODO: Timer logic
+
+  if(!timer_.isOn()) {
+    timer_.start();
+  }
   return msg;
 }
 
 void TCPSender::push( Reader& outbound_stream )
 {
   // Your code here.
-  std::string_view data = outbound_stream.peak();
-  int data_index = 0;
+  // DEBUGING
+  std::cout << "[TCPSender::push] unacked_seqnos_ is " << unacked_seqnos_ << "\n";
+  std::cout << "window_size_ is " << window_size_ << ", unsent_seqnos_ is " << unsent_seqnos_ << "\n";
+  // DEBUGING
+
+  std::string_view data = outbound_stream.peek();
+  // int data_index = 0;
   // while((data_index < data.size()) && (unsent_seqnos_ < window_size_)) {
   //   // TODO: Emplace back
   //   // TODO: Consider the maximum size of each packet
@@ -52,10 +104,18 @@ void TCPSender::push( Reader& outbound_stream )
   //   unsent_msgs_.emplace_back(/* .. */);
   //   unsent_msgs_.size()
   // }
-  unsent_msgs_.emplace_back(next_seqno_, has_to_sent_SYN_, std::string(data.substr(0, window_size_ - unsent_seqnos_)), false);
-  has_to_sent_SYN_ = false;
-  // TODO: Deal with FIN
-  next_seqno_ = next_seqno_ + unsent_msgs_.back().sequence_length();
+  if(!data.empty()) {
+    std::string_view data_to_be_popped = data.substr(0, window_size_ - unacked_seqnos_);
+    unsent_msgs_.emplace_back(Wrap32::wrap(next_seqno_, isn_), has_to_sent_SYN_, 
+      std::string(data_to_be_popped), outbound_stream.is_finished());
+    uint64_t seq_length = unsent_msgs_.back().sequence_length();
+    unsent_seqnos_ += seq_length;
+    unacked_seqnos_ += seq_length;
+    has_to_sent_SYN_ = false;
+    // TODO: Deal with FIN
+    next_seqno_ += seq_length;
+    outbound_stream.pop(data_to_be_popped.size());
+  }
 }
 
 TCPSenderMessage TCPSender::send_empty_message() const
@@ -63,35 +123,94 @@ TCPSenderMessage TCPSender::send_empty_message() const
   // Your code here.
   // TODO: Figure out why
   TCPSenderMessage msg;
-  msg.seqno = next_seqno_;
+  msg.seqno = Wrap32::wrap(next_seqno_, isn_);
   return msg;
 }
 
 void TCPSender::receive( const TCPReceiverMessage& msg )
 {
   // Your code here.
+
+  // DEBUGING
+  std::cout << "[TCPSender::receive], msg is \n";
+  std::cout << msg.toString();
+  uint64_t ab_ackno = msg.ackno.value().unwrap(isn_, next_seqno_);
+  std::cout << "absolute ackno is " << ab_ackno << "\n";
+  // DEBUGING
+
   window_size_ = msg.window_size;
+
+  bool receive_ack = false;
   if(msg.ackno.has_value()) {
+    uint64_t absolute_ackno = msg.ackno.value().unwrap(isn_, next_seqno_);
     while(!unacked_msgs_.empty()) {
       auto & unacked_msg = unacked_msgs_.front();
-      if((unacked_msg.seqno + unacked_msg.sequence_length()).unwrap(isn_, checkpoint_)
-        > msg.ackno.value().unwrap(isn_, checkpoint_)) {
+      uint64_t seq_length = unacked_msg.sequence_length();
+
+      // DEBUGING
+      std::cout << "[TCPSender::receive] Inside the loop, (unacked_msg.seqno).unwrap(isn_, next_seqno_) + seq_length is "
+        << ((unacked_msg.seqno).unwrap(isn_, next_seqno_) + seq_length)
+        << ", and absolute_ackno is " << absolute_ackno << "\n";
+      // DEBUGING
+
+      if((unacked_msg.seqno).unwrap(isn_, next_seqno_) + seq_length
+        > absolute_ackno) {
         break;
       }
+
+      // DEBUGING
+      std::cout << "[TCPSender::receive] pop an unacked msg and add it to the unsent_msgs : " 
+      << unacked_msg.toString() << "\n";
+      // DEBUGING
+
+      unacked_seqnos_ -= seq_length;
       unacked_msgs_.pop_front();
       // TODO: Timer logic
+      assert(timer_.isOn());
+      receive_ack = true;
+      // If the ack does not trigger any deletion of the unacked msgs buffer, 
+      // we don't reset the RTO for the timer
+
+      // DEBUGING
+      std::cout << "seq_length is " << seq_length << ", unacked_seqnos_ is " << unacked_seqnos_ << std::endl;
+      // DBBUGING
+    }
+
+    if(receive_ack) {
+      timer_.resetRTO();
+      consecutive_retransmission_num_ = 0;
+      // TODO: Maybe redundance here?
+      if(unacked_msgs_.empty()) {
+        timer_.stop();
+        // TODO: Maybe NO NEED?
+      } else {
+        timer_.start();
+      }
     }
   }
-
 }
 
 void TCPSender::tick( const size_t ms_since_last_tick )
 {
   // Your code here.
   if(timer_.isOn()) {
-    timer_.tick();
+    timer_.tick(ms_since_last_tick);
     if(timer_.hasExpired()) {
-      // TODO:...
+      // Retransmit
+      TCPSenderMessage msg = unacked_msgs_.front();
+      uint64_t seq_length = msg.sequence_length();
+      unacked_seqnos_ -= seq_length;
+      unsent_seqnos_ += seq_length;
+      unacked_msgs_.pop_front();
+      // Insert into the unsent_msgs_. I think I only need to 
+      //push front, TODO: check it
+      unsent_msgs_.push_front(msg);
+
+      if(window_size_ != 0) {
+        consecutive_retransmission_num_++;
+        timer_.doubleRTO();
+      }
+      timer_.start();
     }
   }
 }
