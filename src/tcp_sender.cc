@@ -35,6 +35,7 @@ optional<TCPSenderMessage> TCPSender::maybe_send()
   // DEBUGING
 
   if(unsent_msgs_.empty()) {
+    // no unsent msgs buffered, see if we have to send SYN / FIN
     if((has_to_sent_SYN_ || has_to_sent_FIN_) && (window_size_ > unacked_seqnos_ + unsent_seqnos_)) {
       // DEBUGING
       std::cout << "unsent_msgs_.empty() && (has_to_sent_SYN_ or has_to_sent_FIN_)\n";
@@ -78,6 +79,7 @@ optional<TCPSenderMessage> TCPSender::maybe_send()
 
   // There's message in the unsent buffer, send the first one
   TCPSenderMessage msg = unsent_msgs_.front();
+  // Carry SYN if SYN unsent
   if(has_to_sent_SYN_) {
     msg.SYN = true;
     has_to_sent_SYN_ = false;
@@ -110,19 +112,30 @@ void TCPSender::push( Reader& outbound_stream )
   //   unsent_msgs_.emplace_back(/* .. */);
   //   unsent_msgs_.size()
   // }
-  has_to_sent_FIN_ = outbound_stream.is_finished();
   // uint64_t data_index = 0;
   if(!data.empty()) {
     // TCPConfig::MAX_PAYLOAD_SIZE
-    std::string_view data_to_be_popped = data.substr(0, window_size_ - unacked_seqnos_ - unsent_seqnos_);
-    unsent_msgs_.emplace_back(Wrap32::wrap(next_seqno_, isn_), has_to_sent_SYN_, 
-      std::string(data_to_be_popped), outbound_stream.is_finished());
-    uint64_t seq_length = unsent_msgs_.back().sequence_length();
-    unsent_seqnos_ += seq_length;
-    has_to_sent_SYN_ = false;
-    has_to_sent_FIN_ = false;
-    next_seqno_ += seq_length;
-    outbound_stream.pop(data_to_be_popped.size());
+    if(window_size_ > (unacked_seqnos_ + unsent_seqnos_)) {
+      // DEBUGING
+      std::cout << "(!data.empty()) and (window_size_ > (unacked_seqnos_ + unsent_seqnos_))\n";
+      // DEBUGING
+
+      std::string_view data_to_be_popped = data.substr(0, window_size_ - unacked_seqnos_ - unsent_seqnos_);
+      unsent_msgs_.emplace_back(Wrap32::wrap(next_seqno_, isn_), false, 
+        std::string(data_to_be_popped), false);
+      uint64_t seq_length = unsent_msgs_.back().sequence_length();
+      unsent_seqnos_ += seq_length;
+      // has_to_sent_SYN_ = false;
+      next_seqno_ += seq_length;
+      outbound_stream.pop(data_to_be_popped.size());
+      has_to_sent_FIN_ = outbound_stream.is_finished();
+      if((has_to_sent_FIN_) && (window_size_ - unsent_seqnos_ - unacked_seqnos_ >= 1)) {
+        unsent_msgs_.back().FIN = true;
+        has_to_sent_FIN_ = false;
+      }
+    }
+  } else {
+    has_to_sent_FIN_ = outbound_stream.is_finished();
   }
 }
 
@@ -147,10 +160,13 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
   // DEBUGING
 
   window_size_ = msg.window_size;
-
   bool receive_ack = false;
   if(msg.ackno.has_value()) {
     uint64_t absolute_ackno = msg.ackno.value().unwrap(isn_, next_seqno_);
+    if(absolute_ackno > next_seqno_) {
+      // impossible ackno which is larger than the next seqno, ignore it
+      return;
+    }
     while(!unacked_msgs_.empty()) {
       auto & unacked_msg = unacked_msgs_.front();
       uint64_t seq_length = unacked_msg.sequence_length();
@@ -173,7 +189,6 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
 
       unacked_seqnos_ -= seq_length;
       unacked_msgs_.pop_front();
-      // TODO: Timer logic
       assert(timer_.isOn());
       receive_ack = true;
       // If the ack does not trigger any deletion of the unacked msgs buffer, 
