@@ -4,10 +4,33 @@
 #include "tcp_receiver_message.hh"
 #include "tcp_sender_message.hh"
 
+class Timer {
+  public:
+    Timer(uint64_t RTO_ms) : RTO_ms_(RTO_ms), timeout_ms_(RTO_ms) {}
+  
+    void tick( uint64_t ms_since_last_tick ) {
+      timeout_ms_ -= ms_since_last_tick;
+      // TODO:
+    }
+  private:
+    bool is_on_{false};
+    uint64_t RTO_ms_;
+    uint64_t timeout_ms_;
+};
+
 class TCPSender
 {
+private:
   Wrap32 isn_;
   uint64_t initial_RTO_ms_;
+  bool has_to_sent_SYN_ = true;
+  std::deque<TCPSenderMessage> unsent_msgs_;
+  std::deque<TCPSenderMessage> unacked_msgs_;
+  Wrap32 next_seqno_;
+  uint32_t unsent_seqnos_ = 0;
+  uint16_t window_size_ = 1;
+  uint64_t checkpoint_ = 0;
+  Timer timer_;
 
 public:
   /* Construct TCP sender with given default Retransmission Timeout and possible ISN */
@@ -31,4 +54,7 @@ public:
   /* Accessors for use in testing */
   uint64_t sequence_numbers_in_flight() const;  // How many sequence numbers are outstanding?
   uint64_t consecutive_retransmissions() const; // How many consecutive *re*transmissions have happened?
+
+private:
+  
 };
