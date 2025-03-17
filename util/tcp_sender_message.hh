@@ -4,6 +4,7 @@
 #include "wrapping_integers.hh"
 
 #include <string>
+#include <sstream>
 
 /*
  * The TCPSenderMessage structure contains the information sent from a TCP sender to its receiver.
@@ -28,6 +29,16 @@ struct TCPSenderMessage
   Buffer payload {};
   bool FIN { false };
 
+  TCPSenderMessage() {}
+  TCPSenderMessage(Wrap32 arg_seqno, bool arg_SYN, std::string arg_payload_str, bool arg_FIN)
+    : seqno(arg_seqno), SYN(arg_SYN), payload(arg_payload_str), FIN(arg_FIN) {}
+
   // How many sequence numbers does this segment use?
   size_t sequence_length() const { return SYN + payload.size() + FIN; }
+
+  std::string toString() const {
+    std::stringstream ss;
+    ss << "{ seqno: " << seqno.getRawValue() << ", SYN: " << SYN << ", payload size: " << payload.size() << ", FIN: " << FIN << " }\n";
+    return ss.str();
+  }
 };

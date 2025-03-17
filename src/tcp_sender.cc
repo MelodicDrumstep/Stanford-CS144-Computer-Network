@@ -17,7 +17,7 @@ TCPSender::TCPSender( uint64_t initial_RTO_ms, optional<Wrap32> fixed_isn )
 uint64_t TCPSender::sequence_numbers_in_flight() const
 {
   // Your code here.
-  return unacked_seqnos_;
+  return unsent_seqnos_ + unacked_seqnos_;
 }
 
 uint64_t TCPSender::consecutive_retransmissions() const
@@ -30,24 +30,39 @@ optional<TCPSenderMessage> TCPSender::maybe_send()
 {
   // Your code here.
   // DEBUGING
-  std::cout << "[TCPSender::maybe_send]\n";
+  std::cout << "[TCPSender::maybe_send], unsent_seqnos_ is " << unsent_seqnos_
+    << ", unacked_seqnos_ is " << unacked_seqnos_ << "\n";
   // DEBUGING
 
   if(unsent_msgs_.empty()) {
-    if(has_to_sent_SYN_) {
+    if(has_to_sent_SYN_ || has_to_sent_FIN_) {
       // DEBUGING
-      std::cout << "unsent_msgs_.empty() && has_to_sent_SYN_\n";
+      std::cout << "unsent_msgs_.empty() && (has_to_sent_SYN_ or has_to_sent_FIN_)\n";
+      std::cout << "has_to_sent_SYN_ is " << has_to_sent_SYN_
+        << "has_to_sent_FIN_ is " << has_to_sent_FIN_ << "\n";
       // DEBUGING
 
       // The first msg would be the SYN message
       // Here it does not carry the payload
-      has_to_sent_SYN_ = false;
       TCPSenderMessage msg;
-      msg.SYN = true;
+      msg.SYN = has_to_sent_SYN_;
+      msg.SYN = has_to_sent_FIN_;
       msg.seqno = Wrap32::wrap(0, isn_);
-      next_seqno_++;
+
+      // DEBUGING
+      std::cout << "msg is " << msg.toString() << "\n";
+      // DEBUGING
+
+      has_to_sent_SYN_ = false;
+      has_to_sent_FIN_ = false;
+      next_seqno_ += (has_to_sent_SYN_ + has_to_sent_FIN_);
       unacked_seqnos_++;
       unacked_msgs_.push_back(msg);
+
+      // DEBUGING
+      std::cout << "msg is " << msg.toString() << "\n";
+      // DEBUGING
+
       // This message must be tracked in the unacked msgs buffer too
       if(!timer_.isOn()) {
         timer_.start();
@@ -77,10 +92,9 @@ optional<TCPSenderMessage> TCPSender::maybe_send()
   }
   uint64_t seq_length = msg.sequence_length();
   unsent_seqnos_ -= seq_length;
+  unacked_seqnos_ += seq_length;
   unsent_msgs_.pop_front();
   unacked_msgs_.push_back(msg);
-  // TODO: Timer logic
-
   if(!timer_.isOn()) {
     timer_.start();
   }
@@ -104,15 +118,17 @@ void TCPSender::push( Reader& outbound_stream )
   //   unsent_msgs_.emplace_back(/* .. */);
   //   unsent_msgs_.size()
   // }
+  has_to_sent_FIN_ = outbound_stream.is_finished();
+  // uint64_t data_index = 0;
   if(!data.empty()) {
+    // TCPConfig::MAX_PAYLOAD_SIZE
     std::string_view data_to_be_popped = data.substr(0, window_size_ - unacked_seqnos_);
     unsent_msgs_.emplace_back(Wrap32::wrap(next_seqno_, isn_), has_to_sent_SYN_, 
       std::string(data_to_be_popped), outbound_stream.is_finished());
     uint64_t seq_length = unsent_msgs_.back().sequence_length();
     unsent_seqnos_ += seq_length;
-    unacked_seqnos_ += seq_length;
     has_to_sent_SYN_ = false;
-    // TODO: Deal with FIN
+    has_to_sent_FIN_ = false;
     next_seqno_ += seq_length;
     outbound_stream.pop(data_to_be_popped.size());
   }

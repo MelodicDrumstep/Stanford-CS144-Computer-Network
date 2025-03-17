@@ -5,6 +5,7 @@
 #include <cassert>
 #include <bitset>
 #include <cstdint>
+#include <iostream>
 
 /** 
 * @brief A customized bitmap implementation
@@ -115,7 +116,8 @@ public:
         pop_count += countOnes(data_[start_array_index] & start_mask);
         data_[start_array_index] &= ~(start_mask);
         // count blocks in batch using pop_count instructions and set the blocks to 0
-        for(uint64_t i = start_array_index + 1; i != end_array_index; i = (i + 1) % array_size_) {
+
+        for(uint64_t i = (start_array_index + 1) % array_size_; i != end_array_index; i = (i + 1) % array_size_) {
             pop_count += countOnes(data_[i]);
             data_[i] = 0;
         }

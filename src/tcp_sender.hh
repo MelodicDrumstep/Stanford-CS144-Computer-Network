@@ -62,6 +62,7 @@ class TCPSender
 private:
   Wrap32 isn_;
   bool has_to_sent_SYN_ = true;
+  bool has_to_sent_FIN_ = false;
   std::deque<TCPSenderMessage> unsent_msgs_ {};
   std::deque<TCPSenderMessage> unacked_msgs_ {};
   uint64_t next_seqno_ = 0; // store the absolute seqno here. It will also serve as the checkpoint when unwrapping ack
