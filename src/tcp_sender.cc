@@ -35,33 +35,25 @@ optional<TCPSenderMessage> TCPSender::maybe_send()
   // DEBUGING
 
   if(unsent_msgs_.empty()) {
-    if(has_to_sent_SYN_ || has_to_sent_FIN_) {
+    if((has_to_sent_SYN_ || has_to_sent_FIN_) && (window_size_ > unacked_seqnos_ + unsent_seqnos_)) {
       // DEBUGING
       std::cout << "unsent_msgs_.empty() && (has_to_sent_SYN_ or has_to_sent_FIN_)\n";
       std::cout << "has_to_sent_SYN_ is " << has_to_sent_SYN_
-        << "has_to_sent_FIN_ is " << has_to_sent_FIN_ << "\n";
+        << ", has_to_sent_FIN_ is " << has_to_sent_FIN_ << "\n";
       // DEBUGING
 
       // The first msg would be the SYN message
       // Here it does not carry the payload
       TCPSenderMessage msg;
       msg.SYN = has_to_sent_SYN_;
-      msg.SYN = has_to_sent_FIN_;
+      msg.FIN = has_to_sent_FIN_;
       msg.seqno = Wrap32::wrap(0, isn_);
-
-      // DEBUGING
-      std::cout << "msg is " << msg.toString() << "\n";
-      // DEBUGING
-
-      has_to_sent_SYN_ = false;
-      has_to_sent_FIN_ = false;
       next_seqno_ += (has_to_sent_SYN_ + has_to_sent_FIN_);
       unacked_seqnos_++;
       unacked_msgs_.push_back(msg);
 
-      // DEBUGING
-      std::cout << "msg is " << msg.toString() << "\n";
-      // DEBUGING
+      has_to_sent_SYN_ = false;
+      has_to_sent_FIN_ = false;
 
       // This message must be tracked in the unacked msgs buffer too
       if(!timer_.isOn()) {
@@ -122,7 +114,7 @@ void TCPSender::push( Reader& outbound_stream )
   // uint64_t data_index = 0;
   if(!data.empty()) {
     // TCPConfig::MAX_PAYLOAD_SIZE
-    std::string_view data_to_be_popped = data.substr(0, window_size_ - unacked_seqnos_);
+    std::string_view data_to_be_popped = data.substr(0, window_size_ - unacked_seqnos_ - unsent_seqnos_);
     unsent_msgs_.emplace_back(Wrap32::wrap(next_seqno_, isn_), has_to_sent_SYN_, 
       std::string(data_to_be_popped), outbound_stream.is_finished());
     uint64_t seq_length = unsent_msgs_.back().sequence_length();
