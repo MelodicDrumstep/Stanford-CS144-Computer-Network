@@ -124,35 +124,40 @@ void TCPSender::push( Reader& outbound_stream )
   //   unsent_msgs_.emplace_back(/* .. */);
   //   unsent_msgs_.size()
   // }
-  // uint64_t data_index = 0;
-  if(!data.empty()) {
+  uint64_t data_index = 0;
+  while(data_index < data.size()) {
     // TCPConfig::MAX_PAYLOAD_SIZE
     if(window_size_ > (unacked_seqnos_ + unsent_seqnos_)) {
       // DEBUGING
       std::cout << "(!data.empty()) and (window_size_ > (unacked_seqnos_ + unsent_seqnos_))\n";
       // DEBUGING
+      uint64_t data_length = std::min(window_size_ - unacked_seqnos_ - unsent_seqnos_ - data_index, TCPConfig::MAX_PAYLOAD_SIZE);
+      // The payload size cannot exceed the MAX_PAYLOAD_SIZE
+      // and the total unsent and unacked messages cannot exceed the window size
 
-      std::string data_to_be_popped = std::string(data.substr(0, window_size_ - unacked_seqnos_ - unsent_seqnos_));
-      outbound_stream.pop(data_to_be_popped.size());
+      std::string data_to_be_popped = std::string(data.substr(data_index, data_length));
+      outbound_stream.pop(data_length);
+      data_index += data_length;
+
       // NOTE: pop the reader first, then check if it's finished
       // If the reader is finished, and we have enough space in the window for a FIN bit
       // Then we carry FIN in this message
       stream_is_finished_ = outbound_stream.is_finished();
       bool FIN_flag = (has_not_sent_FIN_) && (stream_is_finished_) && (window_size_ - unacked_seqnos_ - unsent_seqnos_ >= 1);
-      
       unsent_msgs_.emplace_back(Wrap32::wrap(next_seqno_, isn_), false, 
         std::string(data_to_be_popped), FIN_flag);
       has_not_sent_FIN_ = (has_not_sent_FIN_) && (!FIN_flag);
-      // If we have send a FIN inside the message, set the "has_not_sent_FIN" flag to be false.
+      // If we have sent a FIN inside the message, set the "has_not_sent_FIN" flag to be false.
       // Therefore we would not resend it when "unsent_msgs_" is empty
       uint64_t seq_length = unsent_msgs_.back().msg.sequence_length();
       unsent_seqnos_ += seq_length;
       // has_not_sent_SYN_ = false;
       next_seqno_ += seq_length;
+    } else {
+      break;
     }
-  } else {
-    stream_is_finished_ = outbound_stream.is_finished();
   }
+  stream_is_finished_ = outbound_stream.is_finished();
 }
 
 TCPSenderMessage TCPSender::send_empty_message() const
