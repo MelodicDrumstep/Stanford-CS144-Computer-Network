@@ -7,6 +7,9 @@
 #include "tcp_receiver_message.hh"
 #include "tcp_sender_message.hh"
 
+/**
+ * @brief Timer class for TCP retransmission. Naive implementation.
+ */
 class Timer {
   public:
     Timer(uint64_t RTO_ms) : initial_RTO_ms_(RTO_ms), RTO_ms_(RTO_ms), timeout_ms_(RTO_ms) {}
@@ -48,6 +51,7 @@ class Timer {
     uint64_t initial_RTO_ms_;
     uint64_t RTO_ms_;
     uint64_t timeout_ms_;
+    // only valid if "is_on_ == true". Indicating the remaining time for timeout
 };
 
 /**
@@ -62,15 +66,29 @@ class TCPSender
 {
 private:
   Wrap32 isn_;
+  
+  // These variables are for dealing with SYN / FIN and other special cases
   bool has_not_sent_SYN_ = true;
   bool has_not_sent_FIN_ = true;
   bool stream_is_finished_ = false;
   bool zero_window_size_special_case_flag_ = false;
+
+  // The unsent_msgs stores the msgs pushed from the stream but yet not sent (Will be sent by "maybe_send" function)
+  // It also contains the ones that have to be retransmitted.
+  // The msgs are sorted by seqno.
   std::deque<TCPSenderMessageWrapper> unsent_msgs_ {};
+  // The unacked_msgs stores the msgs sent but not yet acked.
+  // The msgs are sorted by seqno.
   std::deque<TCPSenderMessage> unacked_msgs_ {};
-  uint64_t next_seqno_ = 0; // store the absolute seqno here. It will also serve as the checkpoint when unwrapping ack
+  // These two variables stores the total seqnos in "unsent_msgs_" and "unacked_msgs_".
+  // It could be further encapsulated into a class
+  // However, there's so many special case happening (E.g. add FIN flag to the last msg)
+  // So maintain the variable seperately it's also OKay
   uint32_t unsent_seqnos_ = 0;
   uint32_t unacked_seqnos_ = 0;
+
+  // store the absolute seqno here. It will also serve as the checkpoint when unwrapping ack
+  uint64_t next_seqno_ = 0;
   uint16_t window_size_ = 1;
   uint32_t consecutive_retransmission_num_ = 0;
   Timer timer_;

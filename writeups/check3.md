@@ -1,29 +1,14 @@
 Checkpoint 3 Writeup
 ====================
 
-My name: [your name here]
+So much fun in this lab.
 
-My SUNet ID: [your sunetid here]
+In my implementation, I use two seperate deques, one to store the pushed-but-not-yet-sent msgs, 
+the other to store the sent-but-not-yet-acked msgs. 
 
-I collaborated with: [list sunetids here]
+And it can be observed that, if we add a flag to the msgs stored 
+in the "unsent_msgs" deque, we can differentiate the case, when we need to push the msg from "unsent_msgs" 
+to the __front__ or __back__ of the "unacked_msgs". This trick is implemented in [tcp_sender_message.hh](../util/tcp_sender_message.hh).
 
-I would like to thank/reward these classmates for their help: [list sunetids here]
+And the TCP Sender contains so many special rules and must be dealt with care. The unit tests are awesome : it covers a huge amount of special cases. Please checkout the comments in my code for more details.
 
-This checkpoint took me about [n] hours to do. I [did/did not] attend the lab session.
-
-Program Structure and Design of the TCPSender:
-[]
-
-Implementation Challenges:
-[]
-
-Remaining Bugs:
-[]
-
-- Optional: I had unexpected difficulty with: [describe]
-
-- Optional: I think you could make this lab better by: [describe]
-
-- Optional: I was surprised by: [describe]
-
-- Optional: I'm not sure about: [describe]
