@@ -96,6 +96,12 @@ optional<TCPSenderMessage> TCPSender::maybe_send()
   unsent_seqnos_ -= seq_length;
   unacked_seqnos_ += seq_length;
   unsent_msgs_.pop_front();
+
+  // Here we use the "is_retransmitted" flag attached in the TCPSenderMessageWrapper class
+  // and we call "push_front" if the message is being retransmitted,
+  // because we always retransmit the oldest unacked message
+  // otherwise we call "push_back"
+  // because we read the stream by sequential order
   if(msg_wrapper.is_retransmitted) {
     unacked_msgs_.push_front(msg);
   } else {
@@ -116,48 +122,56 @@ void TCPSender::push( Reader& outbound_stream )
   // DEBUGING
 
   std::string_view data = outbound_stream.peek();
-  // int data_index = 0;
-  // while((data_index < data.size()) && (unsent_seqnos_ < window_size_)) {
-  //   // TODO: Emplace back
-  //   // TODO: Consider the maximum size of each packet
-  //   // ...
-  //   unsent_msgs_.emplace_back(/* .. */);
-  //   unsent_msgs_.size()
-  // }
+
+  // We have to implement TCP segmentation here, slicing the payload into smaller ones if the total
+  // payload size exceed MAX_PAYLOAD_SIZE
   uint64_t data_index = 0;
   while(data_index < data.size()) {
-    // TCPConfig::MAX_PAYLOAD_SIZE
     if(window_size_ > (unacked_seqnos_ + unsent_seqnos_)) {
       // DEBUGING
       std::cout << "(!data.empty()) and (window_size_ > (unacked_seqnos_ + unsent_seqnos_))\n";
       // DEBUGING
       uint64_t data_length = std::min(window_size_ - unacked_seqnos_ - unsent_seqnos_ - data_index, TCPConfig::MAX_PAYLOAD_SIZE);
-      // The payload size cannot exceed the MAX_PAYLOAD_SIZE
+      // The payload size cannot exceed MAX_PAYLOAD_SIZE
       // and the total unsent and unacked messages cannot exceed the window size
 
       std::string data_to_be_popped = std::string(data.substr(data_index, data_length));
       outbound_stream.pop(data_length);
       data_index += data_length;
-
-      // NOTE: pop the reader first, then check if it's finished
-      // If the reader is finished, and we have enough space in the window for a FIN bit
-      // Then we carry FIN in this message
-      stream_is_finished_ = outbound_stream.is_finished();
-      bool FIN_flag = (has_not_sent_FIN_) && (stream_is_finished_) && (window_size_ - unacked_seqnos_ - unsent_seqnos_ >= 1);
       unsent_msgs_.emplace_back(Wrap32::wrap(next_seqno_, isn_), false, 
-        std::string(data_to_be_popped), FIN_flag);
-      has_not_sent_FIN_ = (has_not_sent_FIN_) && (!FIN_flag);
-      // If we have sent a FIN inside the message, set the "has_not_sent_FIN" flag to be false.
-      // Therefore we would not resend it when "unsent_msgs_" is empty
+        std::string(data_to_be_popped), false);
       uint64_t seq_length = unsent_msgs_.back().msg.sequence_length();
       unsent_seqnos_ += seq_length;
       // has_not_sent_SYN_ = false;
+      // Actually, I think there's potential issue for SYN carried in a data message.
+      // However, there's no test case about that.
       next_seqno_ += seq_length;
     } else {
       break;
+      // exceed the window size, must break here, otherwise empty payload would be inserted
     }
   }
+  // NOTE: pop the reader first, then check if it's finished
+  // If the reader is finished, and we have enough space in the window for a FIN bit
+  // Then we carry FIN in this message
   stream_is_finished_ = outbound_stream.is_finished();
+  bool FIN_flag = (has_not_sent_FIN_) && (stream_is_finished_) && (window_size_ - unacked_seqnos_ - unsent_seqnos_ >= 1);
+
+  // DEBUGING
+  std::cout << "[TCPSender::push] FIN_flag is " << FIN_flag << "\n";
+  std::cout << "has_not_sent_FIN_ is " << has_not_sent_FIN_ << "\n";
+  std::cout << "stream_is_finished_ is " << stream_is_finished_ << "\n";
+  // DEBUGING
+  
+  if(!unsent_msgs_.empty()) {
+    unsent_msgs_.back().msg.FIN = FIN_flag;
+    has_not_sent_FIN_ = (has_not_sent_FIN_) && (!FIN_flag);
+    // If we have sent a FIN inside the message, set the "has_not_sent_FIN" flag to be false.
+    // Therefore we would not resend it when "unsent_msgs_" is empty
+    unsent_seqnos_ += FIN_flag;
+    next_seqno_ += FIN_flag;
+    // FIN occupies a seqno. It's important to maintain the seqno counts whenever FIN is attached.
+  }
 }
 
 TCPSenderMessage TCPSender::send_empty_message() const
