@@ -38,8 +38,13 @@ optional<TCPSenderMessage> TCPSender::maybe_send()
 
   if(unsent_msgs_.empty()) {
     // no unsent msgs buffered, see if we have to send SYN / FIN
+    // The zero-window special case also applies here : 
+    // If the window_size_ is 0, see if we can send a 1-seqno message
+    // containing SYN or FIN
     bool can_send_FIN = (has_not_sent_FIN_ && stream_is_finished_);
-    if((has_not_sent_SYN_ || can_send_FIN) && (window_size_ > unacked_seqnos_ + unsent_seqnos_)) {
+    if((has_not_sent_SYN_ || can_send_FIN) 
+      && (((window_size_ == 0) && (zero_window_size_special_case_flag_)) 
+      || (window_size_ > unacked_seqnos_ + unsent_seqnos_))) {
       // DEBUGING
       std::cout << "unsent_msgs_.empty() && (has_not_sent_SYN_ or has_not_sent_FIN_)\n";
       std::cout << "has_not_sent_SYN_ is " << has_not_sent_SYN_
@@ -58,6 +63,8 @@ optional<TCPSenderMessage> TCPSender::maybe_send()
 
       has_not_sent_SYN_ = false;
       has_not_sent_FIN_ = !can_send_FIN;
+
+      zero_window_size_special_case_flag_ = zero_window_size_special_case_flag_ && (window_size_ != 0);
 
       // This message must be tracked in the unacked msgs buffer too
       if(!timer_.isOn()) {
@@ -116,24 +123,34 @@ optional<TCPSenderMessage> TCPSender::maybe_send()
 void TCPSender::push( Reader& outbound_stream )
 {
   // Your code here.
+  std::string_view data = outbound_stream.peek();
   // DEBUGING
   std::cout << "[TCPSender::push] unacked_seqnos_ is " << unacked_seqnos_ << "\n";
   std::cout << "window_size_ is " << window_size_ << ", unsent_seqnos_ is " << unsent_seqnos_ << "\n";
+  std::cout << "data.size() is " << data.size() << "\n";
   // DEBUGING
-
-  std::string_view data = outbound_stream.peek();
 
   // We have to implement TCP segmentation here, slicing the payload into smaller ones if the total
   // payload size exceed MAX_PAYLOAD_SIZE
   uint64_t data_index = 0;
   while(data_index < data.size()) {
-    if(window_size_ > (unacked_seqnos_ + unsent_seqnos_)) {
-      // DEBUGING
-      std::cout << "(!data.empty()) and (window_size_ > (unacked_seqnos_ + unsent_seqnos_))\n";
-      // DEBUGING
-      uint64_t data_length = std::min(window_size_ - unacked_seqnos_ - unsent_seqnos_ - data_index, TCPConfig::MAX_PAYLOAD_SIZE);
+    // include "window_size_ == 0" case here! However, note that this case cannot run for multiple rounds
+    // we have to make sure the while loop execute one round for this case
+    // (even when calling this function multiple times)
+    // therefore I add "zero_window_size_special_case_flag_" data member to the class.
+    if(((window_size_ == 0) && (zero_window_size_special_case_flag_)) || (window_size_ > (unacked_seqnos_ + unsent_seqnos_))) {
+      uint64_t data_length = std::min((window_size_ == 0) ? 1 : (window_size_ - unacked_seqnos_ - unsent_seqnos_), 
+        static_cast<unsigned int>(TCPConfig::MAX_PAYLOAD_SIZE));
       // The payload size cannot exceed MAX_PAYLOAD_SIZE
       // and the total unsent and unacked messages cannot exceed the window size
+      // Other than that, if the window size is 0, we should treat it as 1 and send
+      // a message with 1 seq length if possible, so as to let the sender have a chance
+      // to know when the window size turns to non-zero.
+
+      // DEBUGING
+      std::cout << "(data_index < data.size()) and (window_size_ > (unacked_seqnos_ + unsent_seqnos_))\n";
+      std::cout << "data_length is " << data_length << "\n";
+      // DEBUGING
 
       std::string data_to_be_popped = std::string(data.substr(data_index, data_length));
       outbound_stream.pop(data_length);
@@ -146,6 +163,10 @@ void TCPSender::push( Reader& outbound_stream )
       // Actually, I think there's potential issue for SYN carried in a data message.
       // However, there's no test case about that.
       next_seqno_ += seq_length;
+
+      zero_window_size_special_case_flag_ = zero_window_size_special_case_flag_ && (window_size_ != 0);
+      // If zero_window_size_special_case_flag_ is "true", and this case is "window_size_ == 0"
+      // This means that we consume the zero-window-size case, we set this flag to "false"
     } else {
       break;
       // exceed the window size, must break here, otherwise empty payload would be inserted
@@ -155,7 +176,7 @@ void TCPSender::push( Reader& outbound_stream )
   // If the reader is finished, and we have enough space in the window for a FIN bit
   // Then we carry FIN in this message
   stream_is_finished_ = outbound_stream.is_finished();
-  bool FIN_flag = (has_not_sent_FIN_) && (stream_is_finished_) && (window_size_ - unacked_seqnos_ - unsent_seqnos_ >= 1);
+  bool FIN_flag = (has_not_sent_FIN_) && (stream_is_finished_) && (window_size_ >= unacked_seqnos_ + unsent_seqnos_ + 1);
 
   // DEBUGING
   std::cout << "[TCPSender::push] FIN_flag is " << FIN_flag << "\n";
@@ -205,6 +226,7 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
   // DEBUGING
 
   window_size_ = msg.window_size;
+  zero_window_size_special_case_flag_ = (msg.window_size == 0);
   bool receive_ack = false;
   if(msg.ackno.has_value()) {
     uint64_t absolute_ackno = msg.ackno.value().unwrap(isn_, next_seqno_);

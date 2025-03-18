@@ -65,6 +65,7 @@ private:
   bool has_not_sent_SYN_ = true;
   bool has_not_sent_FIN_ = true;
   bool stream_is_finished_ = false;
+  bool zero_window_size_special_case_flag_ = false;
   std::deque<TCPSenderMessageWrapper> unsent_msgs_ {};
   std::deque<TCPSenderMessage> unacked_msgs_ {};
   uint64_t next_seqno_ = 0; // store the absolute seqno here. It will also serve as the checkpoint when unwrapping ack
