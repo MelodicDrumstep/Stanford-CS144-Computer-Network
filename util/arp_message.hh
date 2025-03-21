@@ -18,6 +18,25 @@ struct ARPMessage
   uint8_t protocol_address_size = sizeof( IPv4Header::src );
   uint16_t opcode {}; // Request or reply
 
+  ARPMessage() = default;
+
+  // reply
+  ARPMessage(uint16_t op, EthernetAddress sender_eth, uint32_t sender_ip, EthernetAddress target_eth, uint32_t target_ip)
+    : opcode(op),
+      sender_ethernet_address(sender_eth),
+      sender_ip_address(sender_ip), 
+      target_ethernet_address(target_eth),
+      target_ip_address(target_ip)
+  {}
+
+  // request
+  ARPMessage(uint16_t op, EthernetAddress sender_eth, uint32_t sender_ip, uint32_t target_ip)
+    : opcode(op),
+      sender_ethernet_address(sender_eth),
+      sender_ip_address(sender_ip),
+      target_ip_address(target_ip)
+  {}
+
   EthernetAddress sender_ethernet_address {};
   uint32_t sender_ip_address {};
 

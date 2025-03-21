@@ -41,27 +41,36 @@ private:
 
   // IP (known as Internet-layer or network-layer) address of the interface
   Address ip_address_;
+  uint32_t ipv4_;
 
-  std::deque<EthernetFrame> eth_frames_to_be_sent_;
+  std::deque<EthernetFrame> eth_frames_to_be_sent_ {};
 
   struct ArpMappingNode {
     uint32_t ipv4;
+    // store the ip here is necessary, as it allows us to find the corresponding
+    // arp table entry when this mapping node expires
+    // And we can set the arp table entry 's arp node ptr to nullptr
+    // to indicating expiration
     EthernetAddress eth_addr;
     size_t timestamp;
+
+    ArpMappingNode(uint32_t ip, const EthernetAddress& eth, size_t ts)
+      : ipv4(ip), eth_addr(eth), timestamp(ts)
+    {}
   };
 
   using ArpQueue = std::deque<ArpMappingNode>;
-  ArpQueue arp_queue_;
+  ArpQueue arp_queue_ {};
 
   struct ArpTableEntry {
     ArpMappingNode * arp_node_ptr = nullptr;
     // If this node is expired, arp_node_ptr will be assigned to nullptr
     // I should have design it to be a std::shared_ptr
     // However, that adds a layer of indirection to std::deque
-    std::deque<InternetDatagram> pending_ip_datagrams;
+    std::deque<InternetDatagram> pending_ip_datagrams {};
   };
 
-  std::unordered_map<uint32_t, ArpTableEntry> arp_table_;
+  std::unordered_map<uint32_t, ArpTableEntry> arp_table_ {};
   // arp_table is a "ip -> arp queue iterator" mapping
 
   size_t timestamp_ = 0;

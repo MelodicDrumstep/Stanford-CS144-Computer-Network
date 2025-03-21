@@ -22,6 +22,12 @@ struct EthernetHeader
   static constexpr uint16_t TYPE_IPv4 = 0x800; //!< Type number for [IPv4](\ref rfc::rfc791)
   static constexpr uint16_t TYPE_ARP = 0x806;  //!< Type number for [ARP](\ref rfc::rfc826)
 
+  EthernetHeader() = default;
+  // Arp request
+  EthernetHeader(const EthernetAddress & arg_src, uint16_t arg_type)
+    : dst(ETHERNET_BROADCAST), src(arg_src), type(arg_type) {}
+
+  // Arp reply / IP datagram
   EthernetHeader(const EthernetAddress & arg_dst, const EthernetAddress & arg_src, uint16_t arg_type)
     : dst(arg_dst), src(arg_src), type(arg_type) {}
 
