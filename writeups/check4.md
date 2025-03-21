@@ -1,29 +1,6 @@
 Checkpoint 4 Writeup
 ====================
 
-My name: [your name here]
+This lab is quite easy. Just follow the rules and everything will work out.
 
-My SUNet ID: [your sunetid here]
-
-I collaborated with: [list sunetids here]
-
-I would like to thank/reward these classmates for their help: [list sunetids here]
-
-This checkpoint took me about [n] hours to do. I [did/did not] attend the lab session.
-
-Program Structure and Design of the NetworkInterface:
-[]
-
-Implementation Challenges:
-[]
-
-Remaining Bugs:
-[]
-
-- Optional: I had unexpected difficulty with: [describe]
-
-- Optional: I think you could make this lab better by: [describe]
-
-- Optional: I was surprised by: [describe]
-
-- Optional: I'm not sure about: [describe]
+For the timeout mechanism, I use a special design : I use a queue (std::deque) to store the ARP mapping node, which contains a timestamp field. And I maintain a global timestamp. Each time "tick" is called, I check the front of the queue and invalidate some mappings. And I maintain a hashmap outside, mapping from target_ip to mapping nodes. It can be further optimized to use ring buffer and other flat designs.

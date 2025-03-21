@@ -60,7 +60,6 @@ optional<InternetDatagram> NetworkInterface::recv_frame( const EthernetFrame& fr
     return ret;
   } else if((header.type == EthernetHeader::TYPE_ARP)) {
     // Arp message
-    // timer logic here
     ARPMessage arp_msg;
     parse(arp_msg, frame.payload);
     if(arp_msg.target_ip_address != ipv4_) {
@@ -136,4 +135,5 @@ optional<EthernetFrame> NetworkInterface::maybe_send()
   eth_frames_to_be_sent_.pop_front();
   return ret; 
   // Will be RVO optimized
+  // no need to wrong about another deep copy
 }

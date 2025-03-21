@@ -44,6 +44,7 @@ private:
   uint32_t ipv4_;
 
   std::deque<EthernetFrame> eth_frames_to_be_sent_ {};
+  // frames that will be sent by "maybe_send" function
 
   struct ArpMappingNode {
     uint32_t ipv4;
@@ -61,6 +62,7 @@ private:
 
   using ArpMappingQueue = std::deque<ArpMappingNode>;
   ArpMappingQueue arp_mapping_queue_ {};
+  // sorted by timestamp
 
   struct ArpRequestTimeNode {
     uint32_t ipv4;
@@ -73,12 +75,14 @@ private:
 
   using ArpRequestTimeQueue = std::deque<ArpRequestTimeNode>;
   ArpRequestTimeQueue arp_request_time_queue_ {};
+  // sorted by timestamp
 
   struct ArpTableEntry {
     ArpMappingNode * arp_mapping_node_ptr = nullptr;
     // If this node is expired, arp_mapping_node_ptr will be assigned to nullptr
     // I should have design it to be a std::shared_ptr
     // However, that adds a layer of indirection to std::deque
+    // And here the logic is simple. It's not difficult to get it right.
     ArpRequestTimeNode * arp_request_ptr = nullptr;
     std::deque<InternetDatagram> pending_ip_datagrams {};
   };
