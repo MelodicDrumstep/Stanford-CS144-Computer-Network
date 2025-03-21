@@ -11,6 +11,10 @@ struct EthernetFrame
   EthernetHeader header {};
   std::vector<Buffer> payload {};
 
+  EthernetFrame(const EthernetAddress & arg_dst, const EthernetAddress & arg_src, uint16_t arg_type,
+    std::vector<Buffer> && arg_payload)
+    : header(arg_dst, arg_src, arg_type), payload(std::move(arg_payload)) {}
+
   void parse( Parser& parser )
   {
     header.parse( parser );

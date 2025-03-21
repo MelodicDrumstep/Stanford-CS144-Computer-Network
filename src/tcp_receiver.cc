@@ -1,8 +1,5 @@
 #include <limits>
 
-// TODO : Delete this after testing
-#include <iostream>
-
 #include "tcp_receiver.hh"
 
 using namespace std;

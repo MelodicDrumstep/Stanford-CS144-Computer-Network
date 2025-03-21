@@ -10,6 +10,7 @@
 #include <queue>
 #include <unordered_map>
 #include <utility>
+#include <deque>
 
 // A "network interface" that connects IP (the internet layer, or network layer)
 // with Ethernet (the network access layer, or link layer).
@@ -40,6 +41,31 @@ private:
 
   // IP (known as Internet-layer or network-layer) address of the interface
   Address ip_address_;
+
+  std::deque<EthernetFrame> eth_frames_to_be_sent_;
+
+  struct ArpMappingNode {
+    uint32_t ipv4;
+    EthernetAddress eth_addr;
+    size_t timestamp;
+  };
+
+  using ArpQueue = std::deque<ArpMappingNode>;
+  ArpQueue arp_queue_;
+
+  struct ArpTableEntry {
+    ArpMappingNode * arp_node_ptr = nullptr;
+    // If this node is expired, arp_node_ptr will be assigned to nullptr
+    // I should have design it to be a std::shared_ptr
+    // However, that adds a layer of indirection to std::deque
+    std::deque<InternetDatagram> pending_ip_datagrams;
+  };
+
+  std::unordered_map<uint32_t, ArpTableEntry> arp_table_;
+  // arp_table is a "ip -> arp queue iterator" mapping
+
+  size_t timestamp_ = 0;
+  constexpr static size_t TimeoutMs = 30'000;
 
 public:
   // Construct a network interface with given Ethernet (network-access-layer) and IP (internet-layer)
