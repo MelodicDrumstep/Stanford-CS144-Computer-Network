@@ -42,7 +42,7 @@ void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Addre
 optional<InternetDatagram> NetworkInterface::recv_frame( const EthernetFrame& frame )
 {
   auto & header = frame.header;
-  if(header.dst != ethernet_address_) {
+  if((header.dst != ethernet_address_) && (header.dst != ETHERNET_BROADCAST)) {
     // The packet is for this network interface, ignore it
     return std::nullopt;
   }
@@ -51,12 +51,15 @@ optional<InternetDatagram> NetworkInterface::recv_frame( const EthernetFrame& fr
     InternetDatagram ret;
     parse(ret, frame.payload);
     return ret;
-  } else if(header.type == EthernetHeader::TYPE_ARP) {
+  } else if((header.type == EthernetHeader::TYPE_ARP)) {
     // Arp message
     // timer logic here
     ARPMessage arp_msg;
     parse(arp_msg, frame.payload);
-
+    if(arp_msg.target_ip_address != ipv4_) {
+      // This ARP msg is not for me
+      return std::nullopt;
+    }
     // Learn the mapping from both the request msg and reply msg
     uint32_t other_ip = arp_msg.sender_ip_address;
     EthernetAddress other_eth_addr = arp_msg.sender_ethernet_address;
