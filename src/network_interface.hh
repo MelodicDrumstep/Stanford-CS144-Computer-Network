@@ -59,14 +59,27 @@ private:
     {}
   };
 
-  using ArpQueue = std::deque<ArpMappingNode>;
-  ArpQueue arp_queue_ {};
+  using ArpMappingQueue = std::deque<ArpMappingNode>;
+  ArpMappingQueue arp_mapping_queue_ {};
+
+  struct ArpRequestTimeNode {
+    uint32_t ipv4;
+    size_t timestamp;
+
+    ArpRequestTimeNode(uint32_t ip, size_t ts)
+      : ipv4(ip), timestamp(ts)
+    {}
+  };
+
+  using ArpRequestTimeQueue = std::deque<ArpRequestTimeNode>;
+  ArpRequestTimeQueue arp_request_time_queue_ {};
 
   struct ArpTableEntry {
-    ArpMappingNode * arp_node_ptr = nullptr;
-    // If this node is expired, arp_node_ptr will be assigned to nullptr
+    ArpMappingNode * arp_mapping_node_ptr = nullptr;
+    // If this node is expired, arp_mapping_node_ptr will be assigned to nullptr
     // I should have design it to be a std::shared_ptr
     // However, that adds a layer of indirection to std::deque
+    ArpRequestTimeNode * arp_request_ptr = nullptr;
     std::deque<InternetDatagram> pending_ip_datagrams {};
   };
 
@@ -74,7 +87,8 @@ private:
   // arp_table is a "ip -> arp queue iterator" mapping
 
   size_t timestamp_ = 0;
-  constexpr static size_t TimeoutMs = 30'000;
+  constexpr static size_t ArpTableEntryTimeoutMs = 30'000;
+  constexpr static size_t ArpRequestWaitingMs = 5'000;
 
 public:
   // Construct a network interface with given Ethernet (network-access-layer) and IP (internet-layer)
