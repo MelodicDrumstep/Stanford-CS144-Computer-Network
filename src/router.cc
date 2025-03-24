@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <limits>
+#include <cassert>
 
 using namespace std;
 
@@ -19,8 +20,8 @@ void Router::add_route( const uint32_t route_prefix,
   cerr << "DEBUG: adding route " << Address::from_ipv4_numeric( route_prefix ).ip() << "/"
        << static_cast<int>( prefix_length ) << " => " << ( next_hop.has_value() ? next_hop->ip() : "(direct)" )
        << " on interface " << interface_num << "\n";
-  router_table_.reserve(interface_num + 1);
-  router_table_.emplace(router_table_.begin() + interface_num, route_prefix, prefix_length, next_hop);
+  router_table_.resize(interface_num + 1);
+  router_table_[interface_num].emplace_back(route_prefix, prefix_length, next_hop);
 }
 
 void Router::route() 
@@ -37,17 +38,22 @@ void Router::route()
     uint32_t dst_ipv4 = header.dst;
     uint8_t max_matched_len = 0;
     size_t max_matched_index = 0;
+    std::optional<Address> matched_next_hop;
+    // std::optional<Address> max_matched_next_hop;
     for(size_t j = 0; j < router_table_.size(); j++) {
-      auto & router_table_entry = router_table_[j];
-      uint32_t route_prefix = router_table_entry.route_prefix;
-      uint8_t prefix_length = router_table_entry.prefix_length;
       if(i == j) {
         // Don't send it to itself
         continue;
       }
-      if(ipPrefixMatched(dst_ipv4, route_prefix, prefix_length) && (prefix_length > max_matched_len)) {
-        max_matched_len = prefix_length;
-        max_matched_index = j;
+      auto & per_interface_router_table = router_table_[j];
+      for(auto & router_table_entry : per_interface_router_table) {
+        uint32_t route_prefix = router_table_entry.route_prefix;
+        uint8_t prefix_length = router_table_entry.prefix_length;
+        if(ipPrefixMatched(dst_ipv4, route_prefix, prefix_length) && (prefix_length > max_matched_len)) {
+          max_matched_len = prefix_length;
+          max_matched_index = j;
+          matched_next_hop = router_table_entry.next_hop;
+        }
       }
     }
     if(max_matched_len != 0) {
@@ -56,11 +62,9 @@ void Router::route()
         continue;
       }
       header.ttl--;
-      auto & router_table_entry_max_matched = router_table_[max_matched_index];
       auto & matched_interface = interfaces_[max_matched_index];
-      auto & next_hop = router_table_entry_max_matched.next_hop;
-      if(next_hop.has_value()) {
-        matched_interface.send_datagram(datagram, next_hop.value());
+      if(matched_next_hop.has_value()) {
+        matched_interface.send_datagram(datagram, matched_next_hop.value());
       } else {
         EthernetFrame ether_frame;
         parse(ether_frame, datagram.payload);

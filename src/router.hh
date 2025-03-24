@@ -70,7 +70,7 @@ class Router
       return *this;
     }
   };
-  std::vector<RouterTableEntry> router_table_ {};
+  std::vector<std::vector<RouterTableEntry>> router_table_ {};
 
 public:
   // Add an interface to the router
