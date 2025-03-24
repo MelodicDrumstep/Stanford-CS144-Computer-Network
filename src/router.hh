@@ -55,6 +55,23 @@ class Router
   // The router's collection of network interfaces
   std::vector<AsyncNetworkInterface> interfaces_ {};
 
+  struct RouterTableEntry {
+    uint32_t route_prefix;
+    uint8_t prefix_length;
+    std::optional<Address> next_hop;
+
+    RouterTableEntry(uint32_t prefix = 0, uint8_t length = 0, std::optional<Address> hop = std::nullopt)
+      : route_prefix(prefix), prefix_length(length), next_hop(hop)
+    {}
+    RouterTableEntry& operator=(const RouterTableEntry& other) {
+      route_prefix = other.route_prefix;
+      prefix_length = other.prefix_length;
+      next_hop = other.next_hop;
+      return *this;
+    }
+  };
+  std::vector<RouterTableEntry> router_table_ {};
+
 public:
   // Add an interface to the router
   // interface: an already-constructed network interface
@@ -65,7 +82,7 @@ public:
     return interfaces_.size() - 1;
   }
 
-  // Access an interface by index
+  // Access an interface by index 
   AsyncNetworkInterface& interface( size_t N ) { return interfaces_.at( N ); }
 
   // Add a route (a forwarding rule)
@@ -82,3 +99,5 @@ public:
   // destination address.
   void route();
 };
+
+bool ipPrefixMatched(uint32_t dst_ip, uint32_t route_prefix_ip, uint8_t prefix_length);
