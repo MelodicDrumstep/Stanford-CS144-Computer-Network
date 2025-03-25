@@ -26,7 +26,7 @@ void Router::add_route( const uint32_t route_prefix,
 
 void Router::route() 
 {
-   // Naive way
+  // Naive way
   // TODO: Delete this after testing
   static uint32_t cnt = 0;
   bool output_flag = (cnt < 3);
@@ -54,12 +54,20 @@ void Router::route()
     uint32_t dst_ipv4 = header.dst;
     uint8_t max_matched_len = 0;
     size_t max_matched_index = 0;
-    std::optional<Address> matched_next_hop;
+    std::optional<Address> matched_next_hop = std::nullopt;
+
+    // TODO: Delete this after testing
+    if(output_flag) { 
+      std::cout << "[Router::route] datagram header is " << datagram.header.to_string() << "\n";
+    }
+    // DEBUGING
+
     for(size_t j = 0; j < router_table_.size(); j++) {
       if(i == j) {
         // Don't send it to itself
         continue;
       }
+
       auto & per_interface_router_table = router_table_[j];
       for(auto & router_table_entry : per_interface_router_table) {
         uint32_t route_prefix = router_table_entry.route_prefix;
@@ -68,7 +76,7 @@ void Router::route()
         // TODO: Debugging
         if(output_flag) {
           std::cout << "iterating throught the router table for interface " << j << ", and the item is :\n"
-             << "route_prefix is " << route_prefix << ", prefix_length is " <<  static_cast<int32_t>(prefix_length) << "\n";         
+            << "route_prefix is " << route_prefix << ", prefix_length is " <<  static_cast<int32_t>(prefix_length) << "\n";         
         }
         // DEBUGING
 
@@ -115,17 +123,14 @@ void Router::route()
 
         matched_interface.send_datagram(datagram, matched_next_hop.value());
       } else {
-        EthernetFrame ether_frame(matched_interface.getMacAddress(), interface.getMacAddress(),
-          EthernetHeader::TYPE_IPv4, serialize(datagram));
-
         // TODO: Delete this after testing
         if(output_flag) {
-          std::cout << "[Router::route] !matched_next_hop.has_value(), let the interface recv the datagram " << "\n"
-            << "and the eth header is " << ether_frame.header.to_string() << "\n";
+          std::cout << "[Router::route] !matched_next_hop.has_value(), let the interface send the datagram directly" << "\n";
         }
         // DEBUGING
 
-        matched_interface.recv_frame(ether_frame);
+        matched_interface.send_datagram(datagram, Address::from_ipv4_numeric(dst_ipv4));
+        matched_interface.incrementDirectDatagramsCount();
       }
     }
   }

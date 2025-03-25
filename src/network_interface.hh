@@ -118,8 +118,12 @@ public:
   // Called periodically when time elapses
   void tick( size_t ms_since_last_tick );
 
-  const EthernetAddress & getMacAddress() {
+  const EthernetAddress & getMacAddress() const {
     return ethernet_address_;
+  }
+
+  uint32_t getIpv4() const {
+    return ipv4_;
   }
 
   // FOR DEBUGGING ONLY

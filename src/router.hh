@@ -14,6 +14,7 @@
 class AsyncNetworkInterface : public NetworkInterface
 {
   std::queue<InternetDatagram> datagrams_in_ {};
+  size_t direct_datagrams_count_ = 0;
   // This variable is used to indicate the number of just-received datagrams,
   // to avoid pulling them out in the same "route" function
 
@@ -37,7 +38,8 @@ public:
       datagrams_in_.push( std::move( optional_dgram.value() ) );
 
       // TODO: Delete this after testing
-      std::cout << "[AsyncNetworkInterface::recv_frame] optional_dgram has value, the ip header is \n"
+      std::cout << "[AsyncNetworkInterface::recv_frame] this interface is " << toString() 
+        << ", optional_dgram has value, the ip header is \n"
         << datagrams_in_.back().header.to_string() << "\n";
       // DEBUGING
     } 
@@ -50,10 +52,6 @@ public:
   // Access queue of Internet datagrams that have been received
   std::optional<InternetDatagram> maybe_receive()
   {
-    // TODO: Delete this after testing
-    std::cout << "[AsyncNetworkInterface::maybe_receive] this interface is " << toString() << "\n";
-    // DEBUGING
-
     if ( datagrams_in_.empty() ) {
       return {};
     }
@@ -67,29 +65,30 @@ public:
     std::cout << "[AsyncNetworkInterface::maybe_receive] datagram.header is "
       << datagram.header.to_string() << "\n";
     // DEBUGING
-
+    
     datagrams_in_.pop();
+    if(direct_datagrams_count_ > 0) {
+      // TODO: Delete this after testing
+      std::cout << "[AsyncNetworkInterface::maybe_receive] direct_datagrams_count_ will decrement." 
+      " And before decrementing, it was " << direct_datagrams_count_ << "\n";
+      // DEBUGING
+
+      direct_datagrams_count_--;
+    }
     return datagram;
   }
 
   // This is a specialized function wrapper that will be called in "route" function
   //
   std::optional<InternetDatagram> maybe_receive_route_specialized() {
-    if ((datagrams_in_.empty()) || (datagrams_in_.front().header.dst == ipv4_)) {
-      // If this datagram is targeted for ourselves, do not pop it in "route" function 
-      return {};
+    if(direct_datagrams_count_ == 0) {
+      return maybe_receive();
     }
-      if(!datagrams_in_.empty()) {
-        // TODO: Delete this after testing
-        std::cout << "[AsyncNetworkInterface::maybe_receive_route_specialized] datagrams_in_.front().header.dst is " << Address::from_ipv4_numeric(datagrams_in_.front().header.dst).to_string()
-          << ", and ipv4_ is " << ip_address_.to_string() << "\n";
-        // DEBUGING
-      }
+    return std::nullopt;
+  }
 
-    InternetDatagram datagram = std::move( datagrams_in_.front() );
-
-    datagrams_in_.pop();
-    return datagram;
+  void incrementDirectDatagramsCount() {
+    direct_datagrams_count_++;
   }
 };
 
@@ -123,6 +122,10 @@ public:
   // returns the index of the interface after it has been added to the router
   size_t add_interface( AsyncNetworkInterface&& interface )
   {
+    // TODO: Delete this after testing
+    std::cout << "[Router::add_interface] add the interface " << interface.toString() << "\n";
+    // DEBUGING
+    
     interfaces_.push_back( std::move( interface ) );
     return interfaces_.size() - 1;
   }
