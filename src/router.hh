@@ -14,9 +14,6 @@
 class AsyncNetworkInterface : public NetworkInterface
 {
   std::queue<InternetDatagram> datagrams_in_ {};
-  size_t direct_datagrams_count_ = 0;
-  // This variable is used to indicate the number of just-received datagrams,
-  // to avoid pulling them out in the same "route" function
 
 public:
   using NetworkInterface::NetworkInterface;
@@ -67,28 +64,7 @@ public:
     // DEBUGING
     
     datagrams_in_.pop();
-    if(direct_datagrams_count_ > 0) {
-      // TODO: Delete this after testing
-      std::cout << "[AsyncNetworkInterface::maybe_receive] direct_datagrams_count_ will decrement." 
-      " And before decrementing, it was " << direct_datagrams_count_ << "\n";
-      // DEBUGING
-
-      direct_datagrams_count_--;
-    }
     return datagram;
-  }
-
-  // This is a specialized function wrapper that will be called in "route" function
-  //
-  std::optional<InternetDatagram> maybe_receive_route_specialized() {
-    if(direct_datagrams_count_ == 0) {
-      return maybe_receive();
-    }
-    return std::nullopt;
-  }
-
-  void incrementDirectDatagramsCount() {
-    direct_datagrams_count_++;
   }
 };
 
@@ -125,7 +101,7 @@ public:
     // TODO: Delete this after testing
     std::cout << "[Router::add_interface] add the interface " << interface.toString() << "\n";
     // DEBUGING
-    
+
     interfaces_.push_back( std::move( interface ) );
     return interfaces_.size() - 1;
   }

@@ -3,6 +3,7 @@
 #include <iostream>
 #include <limits>
 #include <cassert>
+#include <limits>
 
 using namespace std;
 
@@ -28,9 +29,9 @@ void Router::route()
 {
   // Naive way
   // TODO: Delete this after testing
-  static uint32_t cnt = 0;
-  bool output_flag = (cnt < 3);
-  cnt++;
+  // static uint32_t cnt = 0;
+  bool output_flag = true;
+  // cnt++;
   if(output_flag) {
     std::cout << "[Router::route]\n";
   }
@@ -44,7 +45,7 @@ void Router::route()
     }
     // DEBUGING
 
-    auto datagram_opt = interface.maybe_receive_route_specialized();
+    auto datagram_opt = interface.maybe_receive();
     if(!datagram_opt.has_value()) {
       // no datagram from this interface
       continue;
@@ -53,7 +54,7 @@ void Router::route()
     auto & header = datagram.header;
     uint32_t dst_ipv4 = header.dst;
     uint8_t max_matched_len = 0;
-    size_t max_matched_index = 0;
+    size_t max_matched_index = std::numeric_limits<size_t>::max();
     std::optional<Address> matched_next_hop = std::nullopt;
 
     // TODO: Delete this after testing
@@ -80,7 +81,7 @@ void Router::route()
         }
         // DEBUGING
 
-        if(ipPrefixMatched(dst_ipv4, route_prefix, prefix_length) && (prefix_length > max_matched_len)) {
+        if(ipPrefixMatched(dst_ipv4, route_prefix, prefix_length) && (prefix_length >= max_matched_len)) {
           // TODO: Delete this after testing
           if(output_flag) {
             std::cout << "[Router::route] prefix matched, interface is " << interfaces_[j].toString() << "\n";
@@ -94,14 +95,14 @@ void Router::route()
       }
     }
 
-    // TODO: Delete this after testing
-    if(output_flag) {
-      std::cout << "[Router::route] max_matched_len is " << static_cast<int32_t>(max_matched_len) << "\n";
-      std::cout << "matched interface is " << interfaces_[max_matched_index].toString() << "\n";
-    }
-    // DEBUGING
+    if(max_matched_index != std::numeric_limits<size_t>::max()) {
+      // TODO: Delete this after testing
+      if(output_flag) {
+        std::cout << "[Router::route] max_matched_len is " << static_cast<int32_t>(max_matched_len) << "\n";
+        std::cout << "matched interface is " << interfaces_[max_matched_index].toString() << "\n";
+      }
+      // DEBUGING
 
-    if(max_matched_len != 0) {
       if((header.ttl == 1) || (header.ttl == 0)) {
         // TTL will drop to 0
         // TODO: Delete this after testing
@@ -130,7 +131,6 @@ void Router::route()
         // DEBUGING
 
         matched_interface.send_datagram(datagram, Address::from_ipv4_numeric(dst_ipv4));
-        matched_interface.incrementDirectDatagramsCount();
       }
     }
   }
