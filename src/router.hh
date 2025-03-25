@@ -32,17 +32,7 @@ public:
   {
     auto optional_dgram = NetworkInterface::recv_frame( frame );
     if ( optional_dgram.has_value() ) {
-      datagrams_in_.push( std::move( optional_dgram.value() ) );
-
-      // TODO: Delete this after testing
-      std::cout << "[AsyncNetworkInterface::recv_frame] this interface is " << toString() 
-        << ", optional_dgram has value, the ip header is \n"
-        << datagrams_in_.back().header.to_string() << "\n";
-      // DEBUGING
-    } 
-    // TODO; Delete this after testing
-    else {
-      std::cout << "[AsyncNetworkInterface::recv_frame] optional_dgram does not have value\n";
+      datagrams_in_.push( std::move( optional_dgram.value() ) );  
     }
   };
 
@@ -52,17 +42,7 @@ public:
     if ( datagrams_in_.empty() ) {
       return {};
     }
-    // TODO: Delete this after testing
-    std::cout << "[AsyncNetworkInterface::maybe_receive] datagrams_in_.size() is "
-      << datagrams_in_.size() << "\n";
-    // DEBUGING
-
-    InternetDatagram datagram = std::move( datagrams_in_.front() );
-    // TODO: Delete this after testing
-    std::cout << "[AsyncNetworkInterface::maybe_receive] datagram.header is "
-      << datagram.header.to_string() << "\n";
-    // DEBUGING
-    
+    InternetDatagram datagram = std::move( datagrams_in_.front() );    
     datagrams_in_.pop();
     return datagram;
   }
@@ -98,10 +78,6 @@ public:
   // returns the index of the interface after it has been added to the router
   size_t add_interface( AsyncNetworkInterface&& interface )
   {
-    // TODO: Delete this after testing
-    std::cout << "[Router::add_interface] add the interface " << interface.toString() << "\n";
-    // DEBUGING
-
     interfaces_.push_back( std::move( interface ) );
     return interfaces_.size() - 1;
   }
