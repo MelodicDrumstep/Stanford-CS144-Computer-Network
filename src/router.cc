@@ -64,11 +64,6 @@ void Router::route()
     // DEBUGING
 
     for(size_t j = 0; j < router_table_.size(); j++) {
-      if(i == j) {
-        // Don't send it to itself
-        continue;
-      }
-
       auto & per_interface_router_table = router_table_[j];
       for(auto & router_table_entry : per_interface_router_table) {
         uint32_t route_prefix = router_table_entry.route_prefix;
@@ -77,7 +72,9 @@ void Router::route()
         // TODO: Debugging
         if(output_flag) {
           std::cout << "iterating throught the router table for interface " << j << ", and the item is :\n"
-            << "route_prefix is " << route_prefix << ", prefix_length is " <<  static_cast<int32_t>(prefix_length) << "\n";         
+            << "route_prefix is " << Address::from_ipv4_numeric(route_prefix).to_string() 
+            << ", prefix_length is " <<  static_cast<int32_t>(prefix_length) 
+            << ", dst_ip is " << Address::from_ipv4_numeric(dst_ipv4).to_string() << "\n";         
         }
         // DEBUGING
 
