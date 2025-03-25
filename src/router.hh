@@ -4,6 +4,7 @@
 
 #include <optional>
 #include <queue>
+#include <iostream>
 
 // A wrapper for NetworkInterface that makes the host-side
 // interface asynchronous: instead of returning received datagrams
@@ -13,6 +14,8 @@
 class AsyncNetworkInterface : public NetworkInterface
 {
   std::queue<InternetDatagram> datagrams_in_ {};
+  // This variable is used to indicate the number of just-received datagrams,
+  // to avoid pulling them out in the same "route" function
 
 public:
   using NetworkInterface::NetworkInterface;
@@ -32,17 +35,59 @@ public:
     auto optional_dgram = NetworkInterface::recv_frame( frame );
     if ( optional_dgram.has_value() ) {
       datagrams_in_.push( std::move( optional_dgram.value() ) );
+
+      // TODO: Delete this after testing
+      std::cout << "[AsyncNetworkInterface::recv_frame] optional_dgram has value, the ip header is \n"
+        << datagrams_in_.back().header.to_string() << "\n";
+      // DEBUGING
+    } 
+    // TODO; Delete this after testing
+    else {
+      std::cout << "[AsyncNetworkInterface::recv_frame] optional_dgram does not have value\n";
     }
   };
 
   // Access queue of Internet datagrams that have been received
   std::optional<InternetDatagram> maybe_receive()
   {
+    // TODO: Delete this after testing
+    std::cout << "[AsyncNetworkInterface::maybe_receive] this interface is " << toString() << "\n";
+    // DEBUGING
+
     if ( datagrams_in_.empty() ) {
       return {};
     }
+    // TODO: Delete this after testing
+    std::cout << "[AsyncNetworkInterface::maybe_receive] datagrams_in_.size() is "
+      << datagrams_in_.size() << "\n";
+    // DEBUGING
 
     InternetDatagram datagram = std::move( datagrams_in_.front() );
+    // TODO: Delete this after testing
+    std::cout << "[AsyncNetworkInterface::maybe_receive] datagram.header is "
+      << datagram.header.to_string() << "\n";
+    // DEBUGING
+
+    datagrams_in_.pop();
+    return datagram;
+  }
+
+  // This is a specialized function wrapper that will be called in "route" function
+  //
+  std::optional<InternetDatagram> maybe_receive_route_specialized() {
+    if ((datagrams_in_.empty()) || (datagrams_in_.front().header.dst == ipv4_)) {
+      // If this datagram is targeted for ourselves, do not pop it in "route" function 
+      return {};
+    }
+      if(!datagrams_in_.empty()) {
+        // TODO: Delete this after testing
+        std::cout << "[AsyncNetworkInterface::maybe_receive_route_specialized] datagrams_in_.front().header.dst is " << Address::from_ipv4_numeric(datagrams_in_.front().header.dst).to_string()
+          << ", and ipv4_ is " << ip_address_.to_string() << "\n";
+        // DEBUGING
+      }
+
+    InternetDatagram datagram = std::move( datagrams_in_.front() );
+
     datagrams_in_.pop();
     return datagram;
   }

@@ -35,7 +35,7 @@
 // and learns or replies as necessary.
 class NetworkInterface
 {
-private:
+protected:
   // Ethernet (known as hardware, network-access, or link-layer) address of the interface
   EthernetAddress ethernet_address_;
 
@@ -117,4 +117,17 @@ public:
 
   // Called periodically when time elapses
   void tick( size_t ms_since_last_tick );
+
+  const EthernetAddress & getMacAddress() {
+    return ethernet_address_;
+  }
+
+  // FOR DEBUGGING ONLY
+  std::string toString() const {
+    std::string ret = "IP: " + ip_address_.to_string() + ", MAC: ";
+    for(auto c : ethernet_address_) {
+      ret += (std::to_string(c) + " ");
+    }
+    return ret;
+  }
 };
