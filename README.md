@@ -2,10 +2,45 @@
 
 This repository contains my implementation of the labs for Stanford CS144: Computer Networks Spring 2023. For learning reference only, please do not plagiarize.
 
+## Layered Network Model
+
+Through this project, I gained a deep understanding of the layered architecture of computer networks and the responsibilities of each layer.
+
+1. Physical Layer
+
+In this project's Lab 0: Byte Stream, we essentially implemented a simplified version of the physical layer, which provides a means to send and receive raw bytes.
+
+2. Data Link Layer
+
+Lab 4 of this project focuses on communication between network interfaces. Previously, I didn't fully grasp the data link layer, but now my understanding is:
+
+   + The data link layer is responsible for communication between directly connected or switch-connected devices within the same subnet.
+
+   + The network layer cannot replace the data link layer! The data link layer also handles collision avoidance and retransmission after collisions.
+
+Our implementation of the network interface uses the ARP protocol, maintaining a local cache of "IP address -> MAC address" mappings. When sending an Ethernet frame, if the MAC address corresponding to the target IP is cached, the packet is sent directly. Otherwise, an ARP request is broadcast to all devices connected directly or via switches to query the MAC address for that IP. (Switches handle packet forwarding, making devices that aren't physically directly connected behave as if they were.)
+
+3. Network Layer
+
+Lab 5 of this project implements router logic. My understanding of the network layer is:
+
+   + The network layer enables communication across different subnets.
+
+   + Routers at the network layer use routing algorithms to determine the next-hop network interface.
+
+This lab doesn't involve complex routing algorithms but focuses on implementing the routing table logic. Here, we follow the "longest prefix matching" rule to forward packets to the next-hop network interface (or the destination network interface).
+
+4. Transport Layer
+
+Labs 1/2/3 of this project implement the TCP protocol, including sliding windows and timeout retransmission mechanisms. My understanding is that the transport layer provides advanced data transmission features, such as the reliability, flow control, and congestion control offered by TCP.
 
 ## The whole Procedure of Receiving and Transmitted Network Packets
 
-to be continuedd
+This issue wasn't covered in the current project, but I find it extremely interesting and would like to explore it here:
+
+How exactly do our packets travel from the network card to kernel space and then to user space, or get sent from user space through the kernel to the network card?
+
+Here, we'll discuss the Linux operating system and a relatively common implementation of a network card driver.
 
 ## Reference
 
