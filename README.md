@@ -289,7 +289,7 @@ For my purposes, I'm particularly focused on the following fields:
 	struct sk_buff_head	sk_write_queue;
 ```
 
-As we can observe, the commonly mentioned socket write queue and receive queue are actually stored within this `sock` structure in the form of `sk_buff_head`, where `sk_buff` elements are linked together via pointer fields to form a chain. 
+As we can observe, the commonly mentioned socket write queue and receive queue are actually stored within this `struct sock` in the form of `sk_buff_head`, where `sk_buff` elements are linked together via pointer fields to form a chain. 
 
 The `sk_backlog` serves as another `sk_buff` linked list that functions as a fallback queue. When users fail to promptly retrieve packets from `sock.sk_receive_queue` causing it to reach capacity, this backup queue stores subsequently arriving packets, effectively minimizing packet loss due to queue overflow.
 
@@ -348,6 +348,10 @@ v          v      v           v
                                                    ---------
 ```
 
+To simplify and standardize data formats across the network stack, Linux mandates using the `struct sk_buff` to manage packets. For detailed explanations of `sk_buff`, see [struct sk_buff](https://docs.kernel.org/networking/skbuff.html), [Linux sk_buff](https://wiki.linuxfoundation.org/networking/sk_buff), and [How skb works](http://oldvger.kernel.org/~davem/skb.html).
+
+The `struct sk_buff` doesn't store payload copies but maintains pointers (head, data, tail, end) to different parts of the payload (we'll ignore sk_buff's complex linear/page mechanisms for simplicity). The brilliance of sk_buff lies in how protocol headers can be added/removed simply by adjusting these pointers, eliminating the need to copy packet data (including headers) as it moves through protocol layers - only the `struct sk_buff` itself needs copying.
+
 ### Receiving Network Packets
 
 When network packets arrive at the NIC (Network Interface Card), modern NIC drivers typically use DMA (Direct Memory Access) technology, allowing dedicated DMA hardware to automatically place packets into pre-allocated memory regions without CPU intervention in this "basic copy process". We can consider this as the first copy of the packet payload, though it occurs without CPU involvement.
@@ -360,10 +364,6 @@ However, this interrupt-based approach still has performance issues: if every pa
 
 After the soft interrupt handler retrieves the packets, they're passed to the protocol stack. We sequentially deliver them to protocol handlers at the data link layer, network layer, and transport layer - which is exactly what our project implements. A critical consideration here is whether payload copying occurs during protocol stack processing. This leads us to Linux's unified packet encapsulation: sk_buff.
 
-To simplify and standardize data formats across the network stack, Linux mandates using the sk_buff structure to manage packets. For detailed explanations of sk_buff, see [struct sk_buff](https://docs.kernel.org/networking/skbuff.html), [Linux sk_buff](https://wiki.linuxfoundation.org/networking/sk_buff), and [How skb works](http://oldvger.kernel.org/~davem/skb.html).
-
-The sk_buff structure doesn't store payload copies but maintains pointers (head, data, tail, end) to different parts of the payload (we'll ignore sk_buff's complex linear/page mechanisms for simplicity). The brilliance of sk_buff lies in how protocol headers can be added/removed simply by adjusting these pointers, eliminating the need to copy packet data (including headers) as it moves through protocol layers - only the sk_buff structure itself needs copying.
-
 Thus, the protocol stack processing involves zero payload copying! Even TCP sliding window implementation avoids payload copying. Processed data pointers are eventually stored in the socket's receive buffer. After this step, the kernel wakes all blocking read/recv system calls and IO multiplexing calls.
 
 The next copy occurs when users call socket functions like `recv`, transitioning to kernel mode and copying application data from the socket's receive queue sk_buff to the user-provided buffer.
@@ -375,6 +375,30 @@ Therefore, in this receive path, only two payload copies occur:
 ### Transmitting Network Packets
 
 When users call the write system call, execution enters kernel mode, copying data from user space to a kernel-allocated sk_buff. When necessary (e.g., for TCP retransmission), the socket's send_queue adds this sk_buff as a member.
+
+### TCP Connection Setup
+
+### DPDK
+
+DPDK is 10x~100x faster than traditional linux network stack because
+
+1. It allows DMA from / to user space memory, reducing copying.
+
+2. It bypasses the kernel, avoiding the overhead of context switches.
+
+3. It uses polling instead of interrupt for better latency. 
+
+4. It utilizes batch processing to provide better cache hit rates.
+
+5. Threads are pinned to the cores. There's no scheduler overhead.
+
+6. Using lockfree data structures to avoid locking overhead.
+
+7. Numa-aware memory allocation.
+
+8. Support huge pages to reduce TLB misses.
+
+9. Other optimizations related to the hardware features.
 
 ## Reference
 
@@ -417,3 +441,7 @@ When users call the write system call, execution enters kernel mode, copying dat
 19. [使用 TCP 作为传输层时， Linux 发送和接收网络包需要经过几次数据拷贝？](https://www.zhihu.com/question/1886379656162300109)
 
 20. [linux-kernel-labs: Networking](https://linux-kernel-labs.github.io/refs/pull/189/merge/labs/networking.html)
+
+21. [What advances in hardware allowed DPDK to increase performance on packet processing?](https://networkengineering.stackexchange.com/questions/49381/what-advances-in-hardware-allowed-dpdk-to-increase-performance-on-packet-process)
+
+22. [CAM Table in Switches](https://networkengineering.stackexchange.com/questions/43736/why-is-the-cam-table-in-a-switch-called-cam-table-and-not-mac-table-even-though/43740#43740)
