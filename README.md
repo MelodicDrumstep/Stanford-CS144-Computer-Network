@@ -360,17 +360,25 @@ Now our packet resides in kernel space. The data structure used to store the pac
 
 Next, the NIC needs to notify the OS kernel that incoming packets require processing. It does this through hardware interrupts. However, during interrupt handling, we must mask other interrupts, so we aim to keep the interrupt handler as brief as possible to minimize missed interrupts. The typical solution is to have the hardware interrupt handler simply schedule a soft interrupt, allowing the actual packet processing to occur in the soft interrupt context on the same CPU.
 
-However, this interrupt-based approach still has performance issues: if every packet triggers an interrupt, wouldn't that create excessive interrupts, wasting CPU resources and increasing latency? Beyond interrupts, we can also use polling to notify the kernel of incoming packets. Some modern frameworks like DPDK exclusively use polling to achieve ultra-low latency. For traditional Linux networking, we employ an optimization called NAPI (New API). Its core idea is: when multiple packets arrive, only the first packet triggers an interrupt, and subsequent packets within a time window don't generate additional interrupts. Instead, the kernel thread processes packets in polling mode for a period, enabling batch processing.
+However, this interrupt-based approach still has performance issues: if every packet triggers an interrupt, wouldn't that create excessive interrupts, wasting CPU resources and increasing latency? Beyond interrupts, we can also use polling to notify the kernel of incoming packets. Some modern frameworks like DPDK exclusively use polling to achieve ultra-low latency. For traditional Linux networking, we employ an optimization called NAPI (New API). Its core idea is: when multiple packets arrive, the first packet triggers an interrupt, then the NAPI processing is launched. the kernel thread processes packets in polling mode for a period, enabling batch processing.
 
-After the soft interrupt handler retrieves the packets, they're passed to the protocol stack. We sequentially deliver them to protocol handlers at the data link layer, network layer, and transport layer - which is exactly what our project implements. A critical consideration here is whether payload copying occurs during protocol stack processing. This leads us to Linux's unified packet encapsulation: sk_buff.
+(The OS has already created ksoftirqd kernel thread(1 per CPU) at boot time. And the NAPI poller has been added to the CPU polling lits. And for the NAPI polling, there are complicated mechanism to decide the polling window, maybe depending on budget variable or elapsed time.)
 
-Thus, the protocol stack processing involves zero payload copying! Even TCP sliding window implementation avoids payload copying. Processed data pointers are eventually stored in the socket's receive buffer. After this step, the kernel wakes all blocking read/recv system calls and IO multiplexing calls.
+After the soft interrupt handler retrieves the packets, if GRO(Generic Receive Offload) is enabled, the packets are handled to the GRO module for packet coalescing. And if RPS(Receive Packets Steering) is enabled here (and it must be multi-queue NIC), there would be some logic about adding the packets to the per-CPU input queue. At in this case, the ksoftirqd thread on the remote CPU will follow the NAPI procedure and finally harvest the packets. No matter how, the packets are passed to the protocol stack. We sequentially deliver them to protocol handlers at the data link layer, network layer, and transport layer - which is exactly what our project implements. BTW, netfilter and a routing optimization are performed inside the network layer protocol stack. A critical consideration here is whether payload copying occurs during protocol stack processing. 
+
+By looking at the implementation of `struct sk_buff`, we can conclude that the protocol stack processing involves zero payload copying! Even TCP sliding window implementation avoids payload copying. Processed data pointers are eventually stored in the socket's receive buffer. After this step, the kernel wakes all blocking read/recv system calls and IO multiplexing calls.
 
 The next copy occurs when users call socket functions like `recv`, transitioning to kernel mode and copying application data from the socket's receive queue sk_buff to the user-provided buffer.
 
 Therefore, in this receive path, only two payload copies occur:
 1. NIC DMAing the packet to kernel-space buffers
-2. Kernel-to-user space copy during `recv`
+2. Kernel-to-user space copy during `recv`.
+
+#### About XDP
+
+XDP (Express Data Path) is technique that allows us to process packets before they enter the kernel network stack when receiving the packets.
+
+And when XDP is enabled, we have to use `struct xdp_buff` to store the data for XDP processing procedure. Similar to raw data -> sk_buff, raw data -> xdp_buff does not need payload copying. And if XDP indicates that the packet should be handed to the protocol stack, we have to convert the `struct xdp_buff` to `struct sk_buff`. Whether or not this procedure involves copying depends on whether or not the NIC support "zero copy" from `struct xdp_buff` to `struct sk_buff`. If not, we have one additional data payload copying here.
 
 ### Transmitting Network Packets
 
