@@ -36,7 +36,7 @@ This lab doesn't involve complex routing algorithms but focuses on implementing 
 
 Labs 1/2/3 of this project implement the TCP protocol, including sliding windows and timeout retransmission mechanisms. My understanding is that the transport layer provides advanced data transmission features, such as the reliability, flow control, and congestion control offered by TCP.
 
-## The whole Procedure of Receiving and Transmitting Network Packets
+## The Whole Procedure of Receiving and Transmitting Network Packets
 
 This issue wasn't covered in the current project, but I find it extremely interesting and would like to explore it here:
 
@@ -289,7 +289,7 @@ For my purposes, I'm particularly focused on the following fields:
 	struct sk_buff_head	sk_write_queue;
 ```
 
-As we can observe, the commonly mentioned socket write queue and receive queue are actually stored within this `struct sock` in the form of `sk_buff_head`, where `sk_buff` elements are linked together via pointer fields to form a chain. 
+As we can observe, the commonly mentioned socket write queue and receive queue are actually stored within this `struct sock` in the form of `sk_buff_head`, where `sk_buff` elements are linked together via pointer fields to form a linked list. 
 
 The `sk_backlog` serves as another `sk_buff` linked list that functions as a fallback queue. When users fail to promptly retrieve packets from `sock.sk_receive_queue` causing it to reach capacity, this backup queue stores subsequently arriving packets, effectively minimizing packet loss due to queue overflow.
 
@@ -360,31 +360,117 @@ Now our packet resides in kernel space. The data structure used to store the pac
 
 Next, the NIC needs to notify the OS kernel that incoming packets require processing. It does this through hardware interrupts. However, during interrupt handling, we must mask other interrupts, so we aim to keep the interrupt handler as brief as possible to minimize missed interrupts. The typical solution is to have the hardware interrupt handler simply schedule a soft interrupt, allowing the actual packet processing to occur in the soft interrupt context on the same CPU.
 
-However, this interrupt-based approach still has performance issues: if every packet triggers an interrupt, wouldn't that create excessive interrupts, wasting CPU resources and increasing latency? Beyond interrupts, we can also use polling to notify the kernel of incoming packets. Some modern frameworks like DPDK exclusively use polling to achieve ultra-low latency. For traditional Linux networking, we employ an optimization called NAPI (New API). Its core idea is: when multiple packets arrive, the first packet triggers an interrupt, then the NAPI processing is launched. the kernel thread processes packets in polling mode for a period, enabling batch processing.
+However, this interrupt-based approach still has performance issues: if every packet triggers an interrupt, wouldn't that create excessive interrupts, wasting CPU resources and decreasing throughput? Beyond interrupts, we can also use polling to notify the kernel of incoming packets. Some modern frameworks like DPDK exclusively use polling to achieve ultra-low latency. For traditional Linux networking, we employ an optimization called NAPI (New API). Its core idea is: when multiple packets arrive, the first packet triggers an interrupt, then the NAPI processing is launched. the kernel thread processes packets in polling mode for a period, enabling batch processing.
 
 (The OS has already created ksoftirqd kernel thread(1 per CPU) at boot time. And the NAPI poller has been added to the CPU polling lits. And for the NAPI polling, there are complicated mechanism to decide the polling window, maybe depending on budget variable or elapsed time.)
 
 After the soft interrupt handler retrieves the packets, if GRO(Generic Receive Offload) is enabled, the packets are handled to the GRO module for packet coalescing. And if RPS(Receive Packets Steering) is enabled here (and it must be multi-queue NIC), there would be some logic about adding the packets to the per-CPU input queue. At in this case, the ksoftirqd thread on the remote CPU will follow the NAPI procedure and finally harvest the packets. No matter how, the packets are passed to the protocol stack. We sequentially deliver them to protocol handlers at the data link layer, network layer, and transport layer - which is exactly what our project implements. BTW, netfilter and a routing optimization are performed inside the network layer protocol stack. A critical consideration here is whether payload copying occurs during protocol stack processing. 
 
-By looking at the implementation of `struct sk_buff`, we can conclude that the protocol stack processing involves zero payload copying! Even TCP sliding window implementation avoids payload copying. Processed data pointers are eventually stored in the socket's receive buffer. After this step, the kernel wakes all blocking read/recv system calls and IO multiplexing calls.
+By looking at the implementation of `struct sk_buff`, we can conclude that the protocol stack processing involves zero payload copying! Even TCP sliding window implementation avoids payload copying. Processed data pointers are eventually stored in the socket's receive buffer.(The `sk_buff` is copied into the Rx queue of the corresponding `struct sock`.) After this step, the kernel wakes all blocking read/recv system calls and IO multiplexing calls.
 
 The next copy occurs when users call socket functions like `recv`, transitioning to kernel mode and copying application data from the socket's receive queue sk_buff to the user-provided buffer.
 
 Therefore, in this receive path, only two payload copies occur:
-1. NIC DMAing the packet to kernel-space buffers
+1. NIC DMAing the packet to kernel-space buffers (no CPU intervention)
 2. Kernel-to-user space copy during `recv`.
 
 #### About XDP
 
-XDP (Express Data Path) is technique that allows us to process packets before they enter the kernel network stack when receiving the packets.
+XDP (Express Data Path) is a kernel technology that enables packet processing at the earliest possible point in the receive path, before packets enter the kernel network stack.
 
-And when XDP is enabled, we have to use `struct xdp_buff` to store the data for XDP processing procedure. Similar to raw data -> sk_buff, raw data -> xdp_buff does not need payload copying. And if XDP indicates that the packet should be handed to the protocol stack, we have to convert the `struct xdp_buff` to `struct sk_buff`. Whether or not this procedure involves copying depends on whether or not the NIC support "zero copy" from `struct xdp_buff` to `struct sk_buff`. If not, we have one additional data payload copying here.
+When XDP is enabled, network packets are represented using `struct xdp_buff` during the XDP processing phase. Similar to the `sk_buff` conversion for traditional networking, the raw packet data can be directly accessed via `xdp_buff` without payload copying. 
+
+However, if XDP determines that a packet should be passed to the protocol stack, the `struct xdp_buff` needs to be converted to `struct sk_buff`. The efficiency of this conversion depends on NIC capabilities:
+
+- With "zero-copy" capable NICs, the conversion can occur without additional data copying
+- Without zero-copy support, the conversion requires one additional payload copy operation
 
 ### Transmitting Network Packets
 
-When users call the write system call, execution enters kernel mode, copying data from user space to a kernel-allocated sk_buff. When necessary (e.g., for TCP retransmission), the socket's send_queue adds this sk_buff as a member.
+When applications invoke write/send system calls, the execution transitions into kernel space, where packet data is copied from user memory to a kernel-allocated `sk_buff` structure. For protocols like TCP that require retransmission and flow control, the `sk_buff` gets enqueued in the `send_queue` of the corresponding `struct sock`.
+
+The `sk_buff` then traverses the protocol stack where various network headers are progressively added. If the destination MAC address isn't cached, the stack initiates an ARP resolution process.
+
+For NICs with multiple transmit queues, the system employs either XPS (Transmit Packet Steering, when enabled) or a standard hashing algorithm to determine the appropriate transmission queue.
+
+The device driver's transmit handler then processes the packet. The data first passes through the queue discipline (qdisc) associated with the network interface:
+- The qdisc may transmit immediately if resources are available
+- Alternatively, it buffers the packet for later transmission during the NET_TX softirq
+
+The driver subsequently:
+1. Establishes DMA mappings for device access
+2. Notifies the NIC hardware that transmit data is ready
+
+Upon transmission completion, the hardware generates an interrupt. The driver's transmit completion interrupt handler handles this event, typically:
+- Triggering NAPI polling via NET_RX softirq
+- Cleaning up DMA mappings
+- Freeing packet resources during softIRQ processing
 
 ### TCP Connection Setup
+
+As a connection-oriented protocol, TCP requires establishing a connection before data transmission can occur. Having examined the packet handling procedures for established connections, we now turn to the connection establishment process itself - a fundamental aspect of TCP's operation.
+
+![TCP 3-way handshake](images/TCP_Handshake.png)
+
+For the TCP connection setup, the kernel creates these two queues:
+
++ SYN Queue
+
+Its size is determined by a system-wide setting. Although referred to as a queue, it is actually a hash table.
+
++ Accept Queue
+
+Its size is specified by the application. It functions as a FIFO queue for established connections.
+
+#### Socket Programming
+
+##### Server
+
+So the procedure of the server side would be: 
+
+1. Call `socket` to create a`struct socket` for listening.
+
+2. Call `bind` to bind the ip address and port number for listening.
+
+```cpp
+int bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
+```
+
+3. Call `listen` for the listening socket to start working. It will create a accept queue for this listening socket.
+
+When a SYN packet arrives:
+   - The kernel creates a copy of the socket for the new connection
+   - Places this connection socket in the system-wide SYN queue
+   - Responds with a SYN-ACK packet
+
+   Upon receiving the final ACK from the client:
+   - The connection socket is moved from the SYN queue and it's added to the  accept queue for this listening socket
+
+The `backlog` parameter for `bind` specifies the maximum number of pending connections the kernel should queue for the socket, i.e. the size of the accept queue.
+
+```cpp
+int listen (int sockfd, int backlog);
+```
+
+1. Call `accept` to take out the first accepted socket in the accept queue for this listening socket for data transmission / reception.
+
+Notice that the accepted queue is not system-wide. There's no contention.
+
+```cpp
+int accept (int sockfd, struct sockaddr *fromaddr, socklen_t *addrlen);
+```
+
+##### Client
+
+And for the client, the procedure woule be like:
+
+1. Call `socket` to create a `struct socket`.
+
+2. Call `connect` to send `SYN` to the server and wait until the `ACK + SYN` is received from the server or timeout. It will returns 0 if connection is successful and -1 on error.
+
+```cpp
+int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
+```
 
 ### DPDK
 
@@ -402,7 +488,7 @@ DPDK is 10x~100x faster than traditional linux network stack because
 
 6. Using lockfree data structures to avoid locking overhead.
 
-7. Numa-aware memory allocation.
+7. NUMA-aware memory allocation.
 
 8. Support huge pages to reduce TLB misses.
 
@@ -452,4 +538,4 @@ DPDK is 10x~100x faster than traditional linux network stack because
 
 21. [What advances in hardware allowed DPDK to increase performance on packet processing?](https://networkengineering.stackexchange.com/questions/49381/what-advances-in-hardware-allowed-dpdk-to-increase-performance-on-packet-process)
 
-22. [CAM Table in Switches](https://networkengineering.stackexchange.com/questions/43736/why-is-the-cam-table-in-a-switch-called-cam-table-and-not-mac-table-even-though/43740#43740)
+22. [Networking and Sockets: Syn and Accept queue](https://www.kungfudev.com/blog/2024/06/14/network-sockets-syn-and-accept-queue)
